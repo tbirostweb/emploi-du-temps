@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 100" fill="none"><defs>
+ <radialGradient id="petal"><stop stop-color="#eab0b9"/><stop offset=".6" stop-color="#f5d9dc"/><stop offset="1" stop-color="#fff7ef"/></radialGradient>
+ <g id="flower">
+  <g fill="url(#petal)" stroke="#e5b6bd" stroke-width=".6">
+   <path id="p" d="M0 1C-15-4-17-20-7-23L0-19 7-23C17-20 15-4 0 1Z"/>
+   <use href="#p" transform="rotate(72)"/><use href="#p" transform="rotate(144)"/><use href="#p" transform="rotate(216)"/><use href="#p" transform="rotate(288)"/>
+  </g>
+  <g stroke="#bd7b88" stroke-width=".8"><path d="M0 0 0-10M0 0 9-3M0 0 6 8M0 0-6 8M0 0-9-3"/></g>
+  <g fill="#b88a57"><circle cy="-10" r="1.4"/><circle cx="9" cy="-3" r="1.4"/><circle cx="6" cy="8" r="1.4"/><circle cx="-6" cy="8" r="1.4"/><circle cx="-9" cy="-3" r="1.4"/></g><circle r="2.5" fill="#d69aa7"/>
+ </g>
+</defs><path d="M114 5Q78 41 28 71M80 37 69 17M55 55 57 81" stroke="#977966" stroke-width="1.7" stroke-linecap="round"/><path d="M87 28Q104 27 105 14 90 14 87 28M46 61Q33 45 25 50 30 65 46 61" fill="#97a58b"/><use href="#flower" transform="translate(81 32) rotate(12) scale(.82)"/><use href="#flower" transform="translate(45 59) rotate(-12) scale(.92)"/><use href="#flower" transform="translate(69 75) rotate(35) scale(.5)"/><path d="M17 25Q31 27 25 37 15 35 17 25M103 77Q115 72 114 83 106 89 103 77" fill="#efcad2"/></svg>

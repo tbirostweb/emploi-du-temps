@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" fill="none">
+<defs>
+ <radialGradient id="petal"><stop stop-color="#eab0b9"/><stop offset=".6" stop-color="#f5d9dc"/><stop offset="1" stop-color="#fff7ef"/></radialGradient>
+ <g id="flower">
+  <g fill="url(#petal)" stroke="#e5b6bd" stroke-width=".6">
+   <path id="p" d="M0 1C-15-4-17-20-7-23L0-19 7-23C17-20 15-4 0 1Z"/>
+   <use href="#p" transform="rotate(72)"/><use href="#p" transform="rotate(144)"/><use href="#p" transform="rotate(216)"/><use href="#p" transform="rotate(288)"/>
+  </g>
+  <g stroke="#bd7b88" stroke-width=".8"><path d="M0 0 0-10M0 0 9-3M0 0 6 8M0 0-6 8M0 0-9-3"/></g>
+  <g fill="#b88a57"><circle cy="-10" r="1.4"/><circle cx="9" cy="-3" r="1.4"/><circle cx="6" cy="8" r="1.4"/><circle cx="-6" cy="8" r="1.4"/><circle cx="-9" cy="-3" r="1.4"/></g><circle r="2.5" fill="#d69aa7"/>
+ </g>
+</defs>
+<g stroke="#806a59" stroke-linecap="round"><path d="M369 13C305 32 297 102 221 121S106 122 50 179" stroke-width="4"/><path d="M310 55 260 47 222 18M269 97 230 74 170 72M224 120 220 172 188 199M148 137 135 99 103 82M110 147 86 204" stroke-width="2"/><path d="m291 79 37 22m-86 22 32 24m-85-22-26-24m-27 46-42 9" stroke-width="1.5"/></g>
+<g fill="#94a58a"><path d="M255 48q-7-26-27-27 1 21 27 27M226 122q-22 4-26 24 23-2 26-24M136 106q13-22 1-33-13 17-1 33M89 191q-23-1-29 15 23 7 29-15"/></g>
+<use href="#flower" transform="translate(306 53) rotate(15) scale(.9)"/><use href="#flower" transform="translate(265 94) rotate(-15) scale(1.05)"/><use href="#flower" transform="translate(224 75) rotate(18) scale(.7)"/><use href="#flower" transform="translate(216 123) rotate(40)"/><use href="#flower" transform="translate(164 129) rotate(-12) scale(.75)"/><use href="#flower" transform="translate(131 99) rotate(30) scale(.66)"/><use href="#flower" transform="translate(104 155) rotate(15) scale(.85)"/><use href="#flower" transform="translate(218 170) rotate(5) scale(.65)"/><use href="#flower" transform="translate(86 201) rotate(25) scale(.6)"/>
+<g fill="#efd0d5"><ellipse cx="174" cy="207" rx="4" ry="8" transform="rotate(35 174 207)"/><ellipse cx="56" cy="137" rx="3.5" ry="7" transform="rotate(-25 56 137)"/><ellipse cx="279" cy="187" rx="4" ry="8" transform="rotate(55 279 187)"/></g>
+</svg>
