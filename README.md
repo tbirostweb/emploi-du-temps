@@ -60,8 +60,12 @@ Remplacer l’URL par celle du dépôt. `.env.local`, tous les autres secrets `.
 NODE_ENV=production
 PORT=3000
 SESSION_SECRET=REMPLACER_PAR_UNE_CLE_ALEATOIRE
+APP_ORIGIN=https://edt.theo-birost.fr
+CAS_ALLOWED_HOSTS=HOTE_EXACT_DU_CAS_A_RENSEIGNER
 CELCAT_XML_URL=https://celcat-auth.univ-reims.fr/997/groupes/t1739184.xml
 ```
+
+`CAS_ALLOWED_HOSTS` (requis en production) liste l’hôte exact du CAS universitaire : les redirections et la soumission des identifiants vers tout autre hôte, ou en HTTP, sont refusées. Le relever dans la barre d’adresse du navigateur sur la page de connexion universitaire ; ne pas le deviner.
 
 5. Dans Domains, ajouter `edt.theo-birost.fr`, **Container Port 3000**, et activer HTTPS. Le DNS de ce domaine doit pointer vers le serveur Dokploy.
 6. Lancer Deploy. Le conteneur compile Vue, démarre Express et expose `/api/health` pour le contrôle de santé. Aucune base de données ni volume n’est nécessaire.
@@ -89,9 +93,11 @@ Le conteneur utilise le mode production : le test de connexion nécessite un acc
 ## Corrections de préparation à la production
 
 - Login limité à **5 requêtes par 15 minutes par IP**, actualisation à 30/minute. Réponse HTTP 429 avec délai de réessai.
-- Les limiteurs sont en mémoire : utiliser **une seule réplique**. Pour plusieurs répliques, prévoir un stockage partagé (Redis) avant d’augmenter ce nombre. Un redémarrage remet les compteurs à zéro.
-- Ajouter `APP_ORIGIN=https://edt.theo-birost.fr` dans Dokploy. Les POST d’une autre origine sont refusés, le cookie reste Secure et les en-têtes de sécurité sont activés.
-- `TRUSTED_PROXIES` doit contenir uniquement les IP/CIDR effectivement utilisés par Traefik. Vide = les en-têtes d’IP transmis ne sont pas utilisés (limitation partagée derrière le proxy). Ne jamais définir une confiance globale. Ne pas exposer directement le port 3000 sur Internet ; router par le domaine Dokploy.
+- Sessions : registre serveur en mémoire (identifiant `jti` du JWE). La déconnexion révoque immédiatement le jeton, même copié ; un redémarrage ou un changement de `SESSION_SECRET` invalide toutes les sessions (reconnexion demandée).
+- Fournisseur : redirections suivies manuellement et validées (HTTPS + hôtes autorisés), 307/308 après envoi des identifiants refusés, réponses amont plafonnées (`CELCAT_MAX_BYTES`, 5 Mo par défaut), occurrences plafonnées (`CELCAT_MAX_COURSES`), entités XML personnalisées refusées.
+- Les limiteurs et le registre de sessions sont en mémoire : utiliser **une seule réplique**. Pour plusieurs répliques, prévoir un stockage partagé (Redis) avant d’augmenter ce nombre. Un redémarrage remet les compteurs à zéro.
+- Ajouter `APP_ORIGIN=https://edt.theo-birost.fr` dans Dokploy. Les POST d’une autre origine ou sans en-tête `Origin` sont refusés en production, le cookie reste Secure et les en-têtes de sécurité sont activés.
+- `TRUSTED_PROXIES` doit contenir uniquement les IP/CIDR effectivement utilisés par Traefik. Vide = les en-têtes d’IP transmis ne sont pas utilisés (limitation partagée derrière le proxy). Ne jamais définir une confiance globale. Ne pas exposer directement le port 3000 sur Internet ; router par le domaine Dokploy (le Compose publie le port sur `127.0.0.1` seulement, conteneur en lecture seule, capacités retirées, journaux Docker bornés à 3 × 10 Mo).
 - `/api/edt?debug=1` est disponible uniquement en développement, après connexion. En production, ce paramètre renvoie le JSON normal.
 - Erreurs client génériques, diagnostic serveur minimal sans données de session, expiration des appels CELCAT après 30 secondes, arrêt propre avec limite de dix secondes.
 - Polices incluses dans le build, sans Google Fonts externe. Le formulaire passe en premier sur mobile.

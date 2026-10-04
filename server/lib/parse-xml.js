@@ -170,8 +170,12 @@ function normalizeTime(raw) {
         return "";
     return /^(?:[01]\d|2[0-3]):[0-5]\d/.test(raw) ? raw.slice(0, 5) : ""; // "08:00:00" -> "08:00"
 }
+// Garde-fous contre un flux amont hostile ou anormal.
+export const MAX_COURSES = Number(process.env.CELCAT_MAX_COURSES || 20000);
 export function parseCelcatXml(xml) {
     const log = () => {};
+    // Aucune déclaration d’entité personnalisée (expansion / XXE) n’est acceptée.
+    if (typeof xml !== "string" || /<!ENTITY/i.test(xml)) throw new Error("Le flux CELCAT est invalide.");
     log("Longueur du XML reçu :", xml.length, "caractères");
     log("Premiers 300 caractères :", xml.slice(0, 300));
     const parser = new XMLParser({
@@ -212,6 +216,7 @@ export function parseCelcatXml(xml) {
         log("Exemple du premier <event> brut (clés) :", Object.keys(rawEvents[0]));
     }
     rawEvents = expandEvents(rawEvents, root);
+    if (rawEvents.length > MAX_COURSES) throw new Error("Le flux CELCAT contient trop d’événements.");
     const courses = rawEvents.filter(Boolean).map((event, index) => {
         const fromResources = collectFromResources(event, log);
         const subject = findField(event, "subject") ?? fromResources.subject?.[0] ?? "Cours";
@@ -278,13 +283,18 @@ function expandEvents(events, root) {
         const startIndex = Number.isInteger(firstIndex) && firstIndex >= 0 ? firstIndex : indexes[0];
         for (const index of indexes) weeks.set(index, addDays(date, (index - startIndex) * 7));
     }
+    let total = 0;
     return events.flatMap((event,index) => {
+        if (++total > MAX_COURSES) throw new Error('Le flux CELCAT contient trop d’événements.');
         const day = Number(event.day);
         const mask = String(event.rawweeks || '');
         const dates = [];
         if (mask && Number.isInteger(day) && day >= 0 && day <= 6) {
             const anchor = weeks.entries().next().value;
-            if (anchor) for (let i=0;i<mask.length;i++) if (mask[i] === 'Y') dates.push(addDays(anchor[1], (i-anchor[0])*7+day));
+            if (anchor) for (let i=0;i<mask.length;i++) if (mask[i] === 'Y') {
+                if (++total > MAX_COURSES) throw new Error('Le flux CELCAT contient trop d’événements.');
+                dates.push(addDays(anchor[1], (i-anchor[0])*7+day));
+            }
             if (!dates.length && mask.includes('Y')) throw new Error('Semaines CELCAT non reconnues. Vérifie le XML de diagnostic.');
         } else {
             const date = normalizeDate(findField(event,'date'));
