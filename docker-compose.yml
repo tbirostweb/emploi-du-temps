@@ -16,6 +16,10 @@ services:
       LEGAL_CAPITAL: ${LEGAL_CAPITAL:-}
       LEGAL_DIRECTOR: ${LEGAL_DIRECTOR:-}
       LOG_RETENTION_DAYS: ${LOG_RETENTION_DAYS:-}
+      SESSION_SECRET: ${SESSION_SECRET:?Configure SESSION_SECRET}
+      CELCAT_XML_URL: ${CELCAT_XML_URL:-https://celcat-auth.univ-reims.fr/997/groupes/t1739184.xml}
+      CAS_ALLOWED_HOSTS: ${CAS_ALLOWED_HOSTS:?Configure CAS_ALLOWED_HOSTS (hôte exact du CAS)}
+      CELCAT_MAX_BYTES: ${CELCAT_MAX_BYTES:-}
     # Boucle locale uniquement : l’accès public passe par le proxy TLS (Traefik/Dokploy).
     ports:
       - "127.0.0.1:3000:3000"

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { weekDays, shiftDate } from '../src/calendar.js';
 import { parseCelcatXml } from '../server/lib/parse-xml.js';
+import {createSessionToken,readSessionToken} from '../server/lib/session.js';
 const event=(id,day,mask='YYN')=>`<event id="${id}" date="07/09/2026 - 21/09/2026"><day>${day}</day><rawweeks>${mask}</rawweeks><starttime>08:30:00</starttime><endtime>10:30</endtime><resources><module><item>Sciences de l’éducation</item></module><room><item>A12</item><item>A13</item></room><staff><item>Enseignant</item></staff></resources></event>`;
 const spans='<span date="07/09/2026" rawix="1"><alleventweeks>YNN</alleventweeks></span><span date="14/09/2026" rawix="2"><alleventweeks>NYN</alleventweeks></span><span date="21/09/2026" rawix="3"><alleventweeks>NNY</alleventweeks></span>';
 test('CELCAT : chaque jour et chaque semaine active produit une occurrence',()=>{
@@ -24,8 +25,17 @@ test('Un XML invalide ou des semaines indécodables produisent une erreur',()=>{
  assert.throws(()=>parseCelcatXml('<timetable><event></timetable>'));
  assert.throws(()=>parseCelcatXml(`<timetable>${event('a',0)}</timetable>`));
 });
+test('Session : chiffrée, lisible et protégée contre une altération',async()=>{
+ process.env.SESSION_SECRET='test-only-secret-abcdefghijklmnopqrstuvwxyz';const value='{"cookies":[]}';const token=await createSessionToken(value);assert.equal(await readSessionToken(token),value);assert.equal(await readSessionToken(`${token}x`),null);assert.equal(await readSessionToken(null),null);assert.ok(!token.includes(value));
+});
 test('Flux hostile : entités personnalisées et volume d’occurrences plafonnés',()=>{
  assert.throws(()=>parseCelcatXml('<!DOCTYPE t [<!ENTITY a "b">]><timetable><event date="08/09/2026"><starttime>09:00</starttime><module>&a;</module></event></timetable>'),/invalide/);
  assert.throws(()=>parseCelcatXml(`<timetable>${spans}${event('a',0,'Y'.repeat(30000))}</timetable>`),/trop/);
  assert.equal(parseCelcatXml('<timetable><event date="08/09/2026"><starttime>09:00</starttime><module>&lt;img src=x onerror=alert(1)&gt;</module></event></timetable>')[0].subject,'<img src=x onerror=alert(1)>');
+});
+test('Session : jeton révoqué refusé, jeton d’une autre clé refusé',async()=>{
+ const {revokeSessionToken}=await import('../server/lib/session.js');
+ process.env.SESSION_SECRET='test-only-secret-abcdefghijklmnopqrstuvwxyz';const token=await createSessionToken('{}');
+ assert.equal(await readSessionToken(token),'{}');await revokeSessionToken(token);assert.equal(await readSessionToken(token),null);
+ const other=await createSessionToken('{}');process.env.SESSION_SECRET='another-test-secret-abcdefghijklmnopqrstuv';assert.equal(await readSessionToken(other),null);
 });

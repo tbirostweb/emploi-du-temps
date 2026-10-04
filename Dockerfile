@@ -6,7 +6,8 @@ RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
 COPY public ./public
-# Le parseur XML est importé par l’interface (lecture locale dans le navigateur).
+# Parseur XML partagé : utilisé par le serveur (copié aussi au runtime via server/) ; conservé ici
+# pour que le build reste valide si l’interface l’importe.
 COPY server/lib/parse-xml.js ./server/lib/parse-xml.js
 RUN npm run build
 
