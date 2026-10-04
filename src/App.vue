@@ -1,14 +1,14 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { parseCelcatXml } from '../server/lib/parse-xml.js';
+import { computed, onUnmounted, ref } from 'vue';
 import { Leaf, Sun, Moon, LogOut, ArrowRight, RefreshCw, CalendarDays, CalendarCheck, Clock3, ChevronLeft, ChevronRight, Cloud, Plus, Minus } from '@lucide/vue';
 import forestBanner from './assets/forest-banner.webp';
 import cherryBlossoms from './assets/cherry-blossoms.svg';
 import forestMobile from './assets/forest-mobile.webp';
 import CourseCard from './components/CourseCard.vue';
 import { isoDate,weekDays,shiftDate,minutes,label,teachingHours } from './calendar.js';
-const isDev=import.meta.env.DEV;
 const today=isoDate(new Date()), reference=ref(today), selected=ref(today);
-const courses=ref([]), authenticated=ref(false), loading=ref(true), error=ref(''), username=ref(''), password=ref(''), fetchedAt=ref('');
+const courses=ref([]), authenticated=ref(false), loading=ref(false), error=ref(''), fetchedAt=ref('');
 const viewport=window.matchMedia('(max-width: 700px)');
 const compact=ref(viewport.matches), chosenMode=ref(null);
 const mode=computed({get:()=>chosenMode.value ?? (compact.value?'day':'week'),set:value=>{chosenMode.value=value;}});
@@ -36,18 +36,15 @@ function navigate(n){reference.value=shiftDate(reference.value,n*7);selected.val
 function goToday(){reference.value=today;selected.value=today;}
 function jump(event){if(event.target.value){reference.value=event.target.value;selected.value=event.target.value;}}
 function toggleTheme(){dark.value=!dark.value;try{localStorage.setItem('edt-theme-v2',dark.value?'dark':'light');}catch{}}
-async function load(login=false, initial=false){
-  if(loading.value && !initial)return;
-  loading.value=true;error.value='';
-  try {
-    const response=await fetch(login?'/api/auth/login':'/api/edt',login?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username.value,password:password.value})}:{});
-    const data=await response.json();
-    if(!response.ok){if(response.status===401){authenticated.value=false;courses.value=[];if(initial)return;}throw new Error(data.error||'Le chargement a échoué.');}
-    courses.value=data.courses;fetchedAt.value=data.fetchedAt;authenticated.value=true;password.value='';
-  }catch(e){error.value=e instanceof TypeError?'Connexion au serveur impossible. Vérifie ta connexion et réessaie.':e.message;}finally{loading.value=false;}
+async function importXml(event) {
+ error.value=''; const file=event.target.files?.[0]; if(!file)return;
+ if(file.size>2*1024*1024){error.value='Le fichier doit faire moins de 2 Mo.';return;}
+ try {courses.value=parseCelcatXml(await file.text()).map(c=>({...c,staff:[],team:[],notes:''}));fetchedAt.value=new Date().toISOString();authenticated.value=true;}
+ catch {error.value='Ce fichier XML n’est pas un export CELCAT valide.';}
+ event.target.value='';
 }
-async function logout(){loading.value=true;try{const r=await fetch('/api/auth/logout',{method:'POST'});if(!r.ok)throw new Error();authenticated.value=false;courses.value=[];password.value='';error.value='';}catch{error.value='La déconnexion a échoué. Réessaie.';}finally{loading.value=false;}}
-onMounted(()=>load(false,true));
+function load(){error.value='Pour actualiser, ferme le planning puis importe un export XML récent.';}
+function logout(){authenticated.value=false;courses.value=[];error.value='';}
 </script>
 
 <template>
@@ -59,7 +56,7 @@ onMounted(()=>load(false,true));
 
     <main v-if="!authenticated" class="login-layout">
       <div v-if="!compact" class="login-intro"><div class="login-landscape" aria-hidden="true"></div><div class="login-intro-copy"><div class="eyebrow">INSPÉ · CHAUMONT</div><h1>Une place pour<br><em>ta semaine.</em></h1><p>Les cours, les salles, les horaires.<br>Ton quotidien étudiant, simplement.</p><span class="intro-caption">Mon emploi du temps · Université de Reims</span></div></div>
-      <section class="login-card"><img class="cherry-decoration cherry-login" :src="cherryBlossoms" width="360" height="240" alt="" aria-hidden="true" draggable="false"><span class="eyebrow">TON ESPACE ÉTUDIANT</span><h2>Bienvenue <em>à toi.</em></h2><p>Connecte-toi avec tes identifiants URCA pour consulter ton emploi du temps.</p><form @submit.prevent="load(true)"><label for="username">Identifiant URCA</label><input id="username" v-model="username" autocapitalize="none" :spellcheck="false" enterkeyhint="next" autocomplete="username" required placeholder="Ton identifiant universitaire" :disabled="loading"><label for="password">Mot de passe</label><input id="password" v-model="password" type="password" enterkeyhint="go" autocomplete="current-password" required placeholder="Ton mot de passe" :disabled="loading"><p v-if="error" role="alert" class="error">{{error}}</p><button class="primary" :disabled="loading">{{loading?'Connexion en cours…':'Ouvrir mon emploi du temps'}} <ArrowRight aria-hidden="true" /></button></form><p class="privacy">Ton mot de passe sert uniquement à te connecter.<br>Il n’est pas enregistré par cette application.</p></section>
+      <section class="login-card"><img class="cherry-decoration cherry-login" :src="cherryBlossoms" width="360" height="240" alt="" aria-hidden="true" draggable="false"><span class="eyebrow">TON ESPACE ÉTUDIANT</span><h2>Bienvenue <em>à toi.</em></h2><p>Ouvre ton export XML CELCAT obtenu directement auprès de l’université.</p><label for="planning-file">Importer mon planning XML</label><input id="planning-file" type="file" accept=".xml,application/xml,text/xml" @change="importXml"><p v-if="error" role="alert" class="error">{{error}}</p><p class="privacy">Le fichier est lu uniquement dans ce navigateur, sans envoi au serveur. Aucun identifiant universitaire n’est demandé. Fermer la page efface le planning.</p></section>
     </main>
 
     <main v-else class="workspace">
@@ -70,7 +67,7 @@ onMounted(()=>load(false,true));
       <section class="calendar-shell" :aria-busy="loading">
         <div class="calendar-toolbar"><div class="date-navigation"><button class="icon-button" aria-label="Semaine précédente" @click="navigate(-1)"><ChevronLeft aria-hidden="true" /></button><button class="icon-button" aria-label="Semaine suivante" @click="navigate(1)"><ChevronRight aria-hidden="true" /></button><h2>{{range}}</h2></div><div class="view-actions"><button v-if="mode==='week' && !hasWeekend" class="weekend-toggle" :aria-pressed="weekend" @click="weekend=!weekend"><Minus v-if="weekend" aria-hidden="true" /><Plus v-else aria-hidden="true" />{{weekend?'Masquer le week-end':'Week-end'}}</button><button @click="goToday"><CalendarCheck aria-hidden="true" />Aujourd’hui</button><label class="date-picker">Aller au<input aria-label="Aller à une date" type="date" :value="reference" @change="jump"></label><div class="segmented" aria-label="Affichage"><button :class="{active:mode==='week'}" :aria-pressed="mode==='week'" @click="mode='week'">Semaine</button><button :class="{active:mode==='day'}" :aria-pressed="mode==='day'" @click="mode='day'">Jour</button></div></div></div>
         <div v-if="mode==='day'" class="day-tabs" aria-label="Choisir un jour"><button v-for="day in days" :key="day" :class="{active:day===selected}" :aria-pressed="day===selected" :aria-label="label(day,{weekday:'long',day:'numeric',month:'long'})+', '+dayCourses(day).length+' cours'" @click="selected=day"><span>{{label(day,{weekday:'short'})}}</span><strong>{{label(day,{day:'numeric'})}}</strong><small>{{dayCourses(day).length}}<span class="course-count-label"> cours</span></small></button></div>
-        <div v-if="!weekCourses.length" class="empty-week"><Cloud class="empty-icon" aria-hidden="true" /><h3>Aucun cours cette semaine</h3><p>{{courses.length?'Consulte une autre semaine pour retrouver tes cours.':'CELCAT n’a renvoyé aucun cours exploitable.'}}</p><button v-if="courses.length" @click="reference=courses[0].date;selected=courses[0].date">Voir la première semaine disponible <ArrowRight aria-hidden="true" /></button><a v-else-if="isDev" href="/api/edt?debug=1" target="_blank" rel="noopener">Consulter le flux CELCAT</a></div>
+        <div v-if="!weekCourses.length" class="empty-week"><Cloud class="empty-icon" aria-hidden="true" /><h3>Aucun cours cette semaine</h3><p>{{courses.length?'Consulte une autre semaine pour retrouver tes cours.':'Le fichier ne contient aucun cours exploitable.'}}</p><button v-if="courses.length" @click="reference=courses[0].date;selected=courses[0].date">Voir la première semaine disponible <ArrowRight aria-hidden="true" /></button></div>
         <div v-else class="calendar-scroll" :tabindex="compact?-1:0" aria-label="Planning des cours">
           <div class="week-grid" :class="{'day-view':mode==='day'}" :style="{'--day-count':shownDays.length}">
             <section v-for="day in shownDays" :key="day" class="day-column" :class="{'is-today':day===today}">

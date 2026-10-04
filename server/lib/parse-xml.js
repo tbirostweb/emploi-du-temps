@@ -171,7 +171,7 @@ function normalizeTime(raw) {
     return /^(?:[01]\d|2[0-3]):[0-5]\d/.test(raw) ? raw.slice(0, 5) : ""; // "08:00:00" -> "08:00"
 }
 // Garde-fous contre un flux amont hostile ou anormal.
-export const MAX_COURSES = Number(process.env.CELCAT_MAX_COURSES || 20000);
+export const MAX_COURSES = Number((typeof process !== 'undefined' ? process.env?.CELCAT_MAX_COURSES : null) || 20000);
 export function parseCelcatXml(xml) {
     const log = () => {};
     // Aucune déclaration d’entité personnalisée (expansion / XXE) n’est acceptée.
