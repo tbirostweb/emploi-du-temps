@@ -8,26 +8,56 @@ const MAX_BODY_BYTES = Number(process.env.CELCAT_MAX_BYTES || 5 * 1024 * 1024);
 const MAX_REDIRECTS = 10;
 const TIMEOUT_MS = 30000;
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const IP_LITERAL = /^(\d{1,3}\.){3}\d{1,3}$|^\[.*\]$/;
+// Suffixes à deux niveaux courants : trop larges comme domaine parent.
+const WIDE_SUFFIXES = new Set(["co.uk", "ac.uk", "gov.uk", "org.uk", "gouv.fr", "asso.fr", "com.au", "co.jp", "com.br"]);
 /**
- * Hôtes autorisés : celui du flux XML + CAS_ALLOWED_HOSTS (hôte(s) exact(s)
- * du CAS universitaire, séparés par des virgules). Toute redirection ou
- * soumission d’identifiants vers un autre hôte est refusée.
+ * Domaine parent dérivé de l’hôte du flux : premier label retiré si l’hôte a
+ * au moins trois labels (celcat-auth.univ-reims.fr -> univ-reims.fr), sinon
+ * l’hôte lui-même. Renvoie null (hôte exact seulement) pour une IP, un nom
+ * à label unique ou un parent trop large (TLD ou suffixe à deux niveaux).
  */
-export function allowedHosts() {
-    const hosts = new Set([new URL(XML_URL).host.toLowerCase()]);
-    for (const h of (process.env.CAS_ALLOWED_HOSTS || "").split(",")) if (h.trim()) hosts.add(h.trim().toLowerCase());
-    return hosts;
+export function parentDomain(hostname) {
+    const host = hostname.toLowerCase();
+    if (IP_LITERAL.test(host)) return null;
+    const labels = host.split(".");
+    const parent = labels.length >= 3 ? labels.slice(1) : labels;
+    if (parent.length < 2 || WIDE_SUFFIXES.has(parent.join("."))) return null;
+    return parent.join(".");
+}
+/**
+ * Un hôte est autorisé s’il est l’hôte exact de CELCAT_XML_URL, ou (HTTPS,
+ * port par défaut) le domaine parent de cet hôte ou l’un de ses sous-domaines.
+ * Aucune variable de configuration supplémentaire, aucun joker externe.
+ */
+export function isAllowedUpstream(u) {
+    if (u.host.toLowerCase() === new URL(XML_URL).host.toLowerCase()) return true;
+    if (u.protocol !== "https:" || u.port !== "") return false;
+    const parent = parentDomain(new URL(XML_URL).hostname);
+    const h = u.hostname.toLowerCase();
+    return parent !== null && !IP_LITERAL.test(h) && (h === parent || h.endsWith("." + parent));
+}
+/** Vérifie au démarrage que CELCAT_XML_URL est une URL HTTPS valide (boucle locale tolérée en test). */
+export function checkUpstreamConfig() {
+    let u;
+    try { u = new URL(XML_URL); } catch { throw new Error("CELCAT_XML_URL n’est pas une URL valide."); }
+    if ((u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK.has(u.hostname.toLowerCase()))) || u.username || u.password) {
+        throw new Error("CELCAT_XML_URL doit être une URL HTTPS sans identifiants.");
+    }
 }
 export class CelcatAuthError extends Error {
 }
 export class UpstreamPolicyError extends Error {
+    constructor(message, host) { super(message); this.host = host; }
 }
 /** HTTPS obligatoire, sauf boucle locale (tests / développement). */
-function assertAllowedUrl(url) {
+export function assertAllowedUrl(url) {
     const u = new URL(url);
     const secure = u.protocol === "https:" || (u.protocol === "http:" && LOOPBACK.has(u.hostname.toLowerCase()));
-    if (!secure || !allowedHosts().has(u.host.toLowerCase()) || u.username || u.password) {
-        throw new UpstreamPolicyError("Destination amont non autorisée.");
+    if (!secure || u.username || u.password) throw new UpstreamPolicyError("Destination amont non autorisée.");
+    if (!isAllowedUpstream(u)) {
+        // Seul l’hôte est conservé (jamais le chemin ni la requête : jetons possibles).
+        throw new UpstreamPolicyError("Hôte de redirection non autorisé (hors du domaine du flux CELCAT).", u.host.toLowerCase());
     }
     return u;
 }

@@ -4,7 +4,7 @@ import compression from 'compression';
 import { rateLimit } from 'express-rate-limit';
 import { page, legalPage, privacyPage } from './pages.js';
 import { fileURLToPath } from 'node:url';
-import { loginAndFetchSchedule, fetchScheduleWithExistingSession, CelcatAuthError, UpstreamPolicyError } from './lib/celcat-auth.js';
+import { checkUpstreamConfig, loginAndFetchSchedule, fetchScheduleWithExistingSession, CelcatAuthError, UpstreamPolicyError } from './lib/celcat-auth.js';
 import { createSessionToken, readSessionToken, revokeSessionToken, SESSION_MAX_AGE_SECONDS } from './lib/session.js';
 import { parseCelcatXml } from './lib/parse-xml.js';
 
@@ -33,12 +33,13 @@ if(production && !process.env.APP_ORIGIN) throw new Error('APP_ORIGIN est requis
 const origin=process.env.APP_ORIGIN ? new URL(process.env.APP_ORIGIN).origin : null;
 if(production && !origin.startsWith('https://')) throw new Error('APP_ORIGIN doit utiliser HTTPS.');
 // Hôte(s) CAS exact(s) vers lesquels les identifiants peuvent être soumis (aucune valeur par défaut devinée).
-if(production && !process.env.CAS_ALLOWED_HOSTS?.trim()) throw new Error('CAS_ALLOWED_HOSTS est requis en production (hôte exact du CAS universitaire).');
+// Démarrage : CELCAT_XML_URL doit être une URL HTTPS valide ; les hôtes autorisés en sont dérivés.
+if(production) checkUpstreamConfig();
 app.use('/api', (req,res,next) => {
   res.set('Cache-Control','no-store');
   res.set('X-Content-Type-Options','nosniff');
-  // En production, tout POST doit porter l’Origin attendue (les navigateurs l’envoient sur fetch POST).
-  if (req.method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || (origin && req.headers.origin && req.headers.origin !== origin) || (production && req.headers.origin !== origin))) return res.status(403).json({error:'Requête non autorisée.'});
+  // Comme à l’origine : si l’en-tête Origin est présent il doit correspondre à APP_ORIGIN ; les requêtes cross-site sont refusées.
+  if (req.method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || (origin && req.headers.origin && req.headers.origin !== origin) )) return res.status(403).json({error:'Requête non autorisée.'});
   next();
 });
 app.use(express.json({limit:'8kb'}));
@@ -88,7 +89,10 @@ if(production){
 app.use((error,_req,res,_next)=>{
   const status=error instanceof CelcatAuthError?401:error.type==='entity.parse.failed'?400:error.type==='entity.too.large'?413:502;
   // Diagnostic minimal : aucun message d’exception ni contenu de requête.
-  if(status>=500) process.stderr.write(JSON.stringify({event:error instanceof UpstreamPolicyError?'upstream_refused':'request_failed',status,at:new Date().toISOString()})+'\n');
+  if(status>=500){
+    const host=error instanceof UpstreamPolicyError?error.host:undefined;
+    process.stderr.write(JSON.stringify({event:error instanceof UpstreamPolicyError?'upstream_refused':'request_failed',status,...(host?{message:`hôte de redirection non autorisé : ${host} — hors du domaine de CELCAT_XML_URL`}:{}),at:new Date().toISOString()})+'\n');
+  }
   res.status(status).json({error:status===401?'Connexion impossible. Vérifie tes identifiants ou réessaie plus tard.':status===400?'Requête invalide.':status===413?'Requête trop volumineuse.':'Service temporairement indisponible. Réessaie dans un instant.'});
 });
 const server=app.listen(Number(process.env.PORT||3000),'0.0.0.0',()=>{if(!production) process.stdout.write(`Emploi du temps : http://localhost:${process.env.PORT||3000}\n`);});

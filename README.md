@@ -1,4 +1,4 @@
-> Mise à jour du 5 octobre 2026 : retour au fonctionnement d’origine — l’utilisateur se connecte avec ses identifiants CAS de l’URCA et le serveur récupère le flux CELCAT. Le mode « import d’un fichier XML dans le navigateur » est abandonné. **Autorisation de l’université pour ce relais CAS : à confirmer avant publication.** `CAS_ALLOWED_HOSTS` (hôte exact du CAS) et `SESSION_SECRET` (≥ 32 caractères) sont obligatoires en production.
+> Mise à jour du 5 octobre 2026 : retour au fonctionnement d’origine — l’utilisateur se connecte avec ses identifiants CAS de l’URCA et le serveur récupère le flux CELCAT. Le mode « import d’un fichier XML dans le navigateur » est abandonné. **Autorisation de l’université pour ce relais CAS : à confirmer avant publication.** `SESSION_SECRET` (≥ 32 caractères), `APP_ORIGIN` (HTTPS) et un `CELCAT_XML_URL` HTTPS valide sont requis en production.
 
 # Mon emploi du temps · INSPÉ
 
@@ -70,11 +70,11 @@ NODE_ENV=production
 PORT=3000
 SESSION_SECRET=REMPLACER_PAR_UNE_CLE_ALEATOIRE
 APP_ORIGIN=https://edt.theo-birost.fr
-CAS_ALLOWED_HOSTS=HOTE_EXACT_DU_CAS_A_RENSEIGNER
-CELCAT_XML_URL=https://celcat-auth.univ-reims.fr/997/groupes/t1739184.xml
+CELCAT_XML_URL=https://celcat.example.test/groupes/flux.xml
+LOG_RETENTION_DAYS=3
 ```
 
-`CAS_ALLOWED_HOSTS` (requis en production) liste l’hôte exact du CAS universitaire : les redirections et la soumission des identifiants vers tout autre hôte, ou en HTTP, sont refusées. Le relever dans la barre d’adresse du navigateur sur la page de connexion universitaire ; ne pas le deviner.
+Aucune liste d’hôtes à configurer : les hôtes autorisés sont dérivés de `CELCAT_XML_URL` (HTTPS uniquement) — l’hôte exact du flux, son domaine parent et les sous-domaines (pour `celcat.example.test` : `example.test` et `*.example.test`). Tout autre hôte, HTTP, adresse IP ou domaine parent trop large (`fr`, `com`, `co.uk`…) est refusé, ainsi que les redirections 307/308 après envoi des identifiants ; le journal indique alors « hôte de redirection non autorisé : <hôte> ».
 
 5. Dans Domains, ajouter `edt.theo-birost.fr`, **Container Port 3000**, et activer HTTPS. Le DNS de ce domaine doit pointer vers le serveur Dokploy.
 6. Lancer Deploy. Le conteneur compile Vue, démarre Express et expose `/api/health` pour le contrôle de santé. Aucune base de données ni volume n’est nécessaire.
@@ -114,7 +114,7 @@ Le conteneur utilise le mode production : le test de connexion nécessite un acc
 
 ### Pages légales à compléter
 
-Les variables `LEGAL_*` de `.env.example` alimentent les pages à l’exécution. Compléter la dénomination et forme juridique, l’adresse, le contact public, l’immatriculation, la TVA et le capital si applicables, et le directeur de publication. Vérifier la base légale retenue pour ce service et la région réelle du VPS. `LOG_RETENTION_DAYS` est une déclaration : configurer aussi la rotation et la suppression effectives des journaux dans l’infrastructure.
+Les variables `LEGAL_*` de `.env.example` alimentent les pages à l’exécution. Compléter la dénomination et forme juridique, l’adresse, le contact public, l’immatriculation, la TVA et le capital si applicables, et le directeur de publication. Vérifier la base légale retenue pour ce service et la région réelle du VPS. `LOG_RETENTION_DAYS` (défaut du code : 30 ; exemple : 3) sert uniquement à afficher la durée dans la politique de confidentialité : l’application n’écrit aucun fichier de journal et ne purge rien. La rotation/suppression des journaux d’infrastructure (Traefik, Dokploy, Docker) se configure séparément et n’est pas garantie par cette variable.
 
 ### Recette Dokploy à faire au moment de publier
 

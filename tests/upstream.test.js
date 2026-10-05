@@ -19,13 +19,14 @@ before(async()=>{
       if(mode==='evil') {res.writeHead(302,{Location:evilUrl});return res.end();}
       if(mode==='huge') {res.setHeader('Content-Type','application/xml');return res.end(`<timetable>${'<!-- x -->'.repeat(20000)}</timetable>`);}
       if(mode==='entity') {res.setHeader('Content-Type','application/xml');return res.end('<!DOCTYPE t [<!ENTITY a "aaaaaaaaaa">]><timetable><event date="2026-09-09"><starttime>14:00</starttime><module>&a;</module></event></timetable>');}
+      if(url.searchParams.get('ticket')==='ST-fixture') {res.writeHead(302,{'Set-Cookie':'TGC=ok; Path=/',Location:'/xml'});return res.end();}
       if(mode==='public' || req.headers.cookie?.includes('TGC=ok')) {res.setHeader('Content-Type','application/xml');return res.end(XML);}
       res.writeHead(302,{Location:'/cas/login?service=xml'});return res.end();
     }
     if(url.pathname==='/cas/login'){
       if(req.method==='GET') return res.end(FORM);
       if(mode==='post307') {res.writeHead(307,{Location:'/collect'});return res.end();}
-      if(new URLSearchParams(data).get('password')==='good') {res.writeHead(302,{'Set-Cookie':'TGC=ok; Path=/',Location:'/xml'});return res.end();}
+      if(new URLSearchParams(data).get('password')==='good') {res.writeHead(302,{'Set-Cookie':'TGC=ok; Path=/',Location:'/xml?ticket=ST-fixture'});return res.end();}
       return res.end(FORM);
     }
     res.statusCode=404;res.end();
@@ -33,7 +34,7 @@ before(async()=>{
   await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
   const host=`127.0.0.1:${upstream.address().port}`;
   Object.assign(process.env,{NODE_ENV:'production',PORT:'0',SESSION_SECRET:randomBytes(32).toString('base64'),APP_ORIGIN:ORIGIN,
-    CELCAT_XML_URL:`http://${host}/xml`,CAS_ALLOWED_HOSTS:host,CELCAT_MAX_BYTES:'100000'});
+    CELCAT_XML_URL:`http://${host}/xml`,LOG_RETENTION_DAYS:'3',CELCAT_MAX_BYTES:'100000'});
   delete process.env.TRUSTED_PROXIES;
   server=(await import('../server/index.js')).default;
   if(!server.listening) await new Promise(resolve=>server.once('listening',resolve));

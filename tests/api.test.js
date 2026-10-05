@@ -10,7 +10,6 @@ before(async()=>{
   process.env.SESSION_SECRET=randomBytes(32).toString('base64');
   process.env.APP_ORIGIN='https://edt.example.test';
   process.env.CELCAT_XML_URL=`http://127.0.0.1:${upstream.address().port}/`;
-  process.env.CAS_ALLOWED_HOSTS=`127.0.0.1:${upstream.address().port}`;
   delete process.env.TRUSTED_PROXIES;
   server=(await import('../server/index.js')).default;
   if(!server.listening) await new Promise(resolve=>server.once('listening',resolve));
@@ -31,9 +30,7 @@ test('Production : pages légales, sécurité HTTP et vraie 404',async()=>{
 test('API : session requise, origine et entrées contrôlées',async()=>{
   assert.equal((await fetch(base+'/api/edt')).status,401);
   assert.equal((await post({},{Origin:'https://evil.example'})).status,403);
-  // POST sans Origin refusé en production.
-  assert.equal((await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,403);
-  assert.equal((await fetch(`${base}/api/auth/logout`,{method:'POST'})).status,403);
+  assert.equal((await fetch(`${base}/api/auth/logout`,{method:'POST',headers:{'Sec-Fetch-Site':'cross-site'}})).status,403);
   // Cookie altéré ou forgé : 401 sans appel fournisseur exploitable.
   assert.equal((await fetch(base+'/api/edt',{headers:{Cookie:'edt_session=abc.def.ghi.jkl.mno'}})).status,401);
   assert.equal((await post({username:12,password:'x'})).status,400);
