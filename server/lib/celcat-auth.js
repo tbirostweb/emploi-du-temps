@@ -7,6 +7,7 @@ const XML_URL = process.env.CELCAT_XML_URL ??
 const MAX_BODY_BYTES = Number(process.env.CELCAT_MAX_BYTES || 5 * 1024 * 1024);
 const MAX_REDIRECTS = 10;
 const TIMEOUT_MS = 30000;
+const LOGOUT_TIMEOUT_MS = 5000;
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const IP_LITERAL = /^(\d{1,3}\.){3}\d{1,3}$|^\[.*\]$/;
 // Suffixes à deux niveaux courants : trop larges comme domaine parent.
@@ -82,11 +83,11 @@ async function readLimitedText(response) {
  * POST (identifiants) n’est jamais renvoyée telle quelle : 307/308 refusés,
  * 301/302/303 transformés en GET sans corps.
  */
-async function safeFetch(fetchWithCookies, url, init = {}) {
+async function safeFetch(fetchWithCookies, url, init = {}, timeoutMs = TIMEOUT_MS) {
     let current = assertAllowedUrl(url).href;
     let options = { ...init };
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        const response = await fetchWithCookies(current, { ...options, redirect: "manual", signal: AbortSignal.timeout(TIMEOUT_MS) });
+        const response = await fetchWithCookies(current, { ...options, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
         if (![301, 302, 303, 307, 308].includes(response.status)) {
             const text = await readLimitedText(response);
             return { response, url: current, text };
@@ -119,10 +120,9 @@ export async function loginAndFetchSchedule(username, password) {
     const loginPage = await safeFetch(fetchWithCookies, XML_URL);
     const loginPageUrl = new URL(loginPage.url);
     if (!loginPageUrl.pathname.includes("/cas/login")) {
-        // Cas de figure imprévu : pas de redirection vers le CAS. On considère
-        // que le flux est peut-être déjà public, on renvoie tel quel.
-        if (!loginPage.response.ok || !looksLikeCelcatXml(loginPage.text)) throw new CelcatAuthError("Le service CELCAT ne renvoie pas d’emploi du temps.");
-        return { xml: loginPage.text, serializedJar: JSON.stringify(jar.toJSON()) };
+        // Aucune redirection vers le CAS : les identifiants ne sont pas vérifiés,
+        // aucune session n’est créée.
+        throw new CelcatAuthError("Le service CELCAT n’a pas demandé d’authentification CAS.");
     }
     // 2. On extrait les champs cachés du formulaire CAS (ex: "execution",
     // un jeton anti-rejeu unique à chaque tentative).
@@ -164,7 +164,39 @@ export async function loginAndFetchSchedule(username, password) {
     if (!looksLikeCelcatXml(xml)) {
         throw new CelcatAuthError("La connexion CAS a réussi mais le flux XML attendu n'a pas été trouvé. La structure du site a peut-être changé.");
     }
-    return { xml, serializedJar: JSON.stringify(jar.toJSON()) };
+    return { xml, serializedJar: serializeCelcatJar(jar), logoutUrl: casLogoutUrl(loginPageUrl) };
+}
+/**
+ * Ne conserve que les cookies envoyés au flux CELCAT et posés pour son hôte
+ * exact : le TGC du CAS (autre hôte ou domaine parent) n’est jamais sérialisé.
+ */
+export function serializeCelcatJar(jar, url = XML_URL) {
+    const host = new URL(url).hostname.toLowerCase();
+    const cookies = jar.getCookiesSync(url).filter(c => c.domain?.toLowerCase() === host).map(c => c.toJSON());
+    return JSON.stringify({ ...jar.toJSON(), cookies });
+}
+/** URL de déconnexion CAS dérivée de la page de connexion validée (même hôte, même préfixe). */
+function casLogoutUrl(loginPageUrl) {
+    const u = new URL(loginPageUrl.href);
+    u.pathname = u.pathname.slice(0, u.pathname.indexOf("/cas/login")) + "/cas/logout";
+    u.search = "";
+    u.hash = "";
+    return assertAllowedUrl(u.href).href;
+}
+/**
+ * Déconnexion CAS best effort avec le jar de la session : toute erreur
+ * (réseau, hôte refusé, délai) est ignorée et ne bloque jamais le logout.
+ */
+export async function casLogout(serializedJar, logoutUrl) {
+    if (!logoutUrl) return;
+    try {
+        const u = assertAllowedUrl(logoutUrl);
+        if (!u.pathname.endsWith("/cas/logout")) return;
+        const jar = CookieJar.fromJSON(serializedJar);
+        await safeFetch(fetchCookieBuilder(fetch, jar), u.href, {}, LOGOUT_TIMEOUT_MS);
+    } catch {
+        // Toléré : la session locale est révoquée quoi qu’il arrive.
+    }
 }
 /**
  * Réutilise une session déjà établie (cookie chiffré) pour récupérer le XML

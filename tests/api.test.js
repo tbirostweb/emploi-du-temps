@@ -4,13 +4,24 @@ import {createServer} from 'node:http';
 import {randomBytes} from 'node:crypto';
 let server, upstream, base;
 before(async()=>{
-  upstream=createServer((_req,res)=>{res.setHeader('Content-Type','application/xml');res.end('<timetable><event date="2026-09-09"><starttime>14:00</starttime><endtime>16:00</endtime><module>Test</module></event></timetable>');});
+  // CAS minimal en boucle locale : le flux exige un passage par /cas/login.
+  upstream=createServer((req,res)=>{
+    const url=new URL(req.url,'http://x');
+    if(url.pathname==='/cas/login'){
+      if(req.method==='GET') return res.end('<html><body><form id="fm1" method="post"><input type="hidden" name="execution" value="e1"></form></body></html>');
+      res.writeHead(302,{'Set-Cookie':'CELCAT=ok; Path=/',Location:'/xml'});return res.end();
+    }
+    if(url.pathname==='/cas/logout') return res.end('ok');
+    if(!req.headers.cookie?.includes('CELCAT=ok')){res.writeHead(302,{Location:'/cas/login?service=xml'});return res.end();}
+    res.setHeader('Content-Type','application/xml');res.end('<timetable><event date="2026-09-09"><starttime>14:00</starttime><endtime>16:00</endtime><module>Test</module></event></timetable>');
+  });
   await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
   process.env.NODE_ENV='production';process.env.PORT='0';
   process.env.SESSION_SECRET=randomBytes(32).toString('base64');
   process.env.APP_ORIGIN='https://edt.example.test';
-  process.env.CELCAT_XML_URL=`http://127.0.0.1:${upstream.address().port}/`;
-  delete process.env.TRUSTED_PROXIES;
+  process.env.CELCAT_XML_URL=`http://127.0.0.1:${upstream.address().port}/xml`;
+  // Proxy de confiance volontairement différent du client de test (127.0.0.1) : ses X-Forwarded-For sont ignorés.
+  process.env.TRUSTED_PROXIES='192.0.2.1';
   server=(await import('../server/index.js')).default;
   if(!server.listening) await new Promise(resolve=>server.once('listening',resolve));
   base=`http://127.0.0.1:${server.address().port}`;
@@ -49,7 +60,7 @@ test('Session production : cookie sécurisé, debug désactivé et logout',async
   const replay=await fetch(base+'/api/edt',{headers:{Cookie:cookie}});
   assert.equal(replay.status,401);assert.equal((await replay.json()).code,'SESSION_EXPIRED');
 });
-test('Login : le plafond bloque aussi les faux X-Forwarded-For',async()=>{
+test('Login : le plafond bloque aussi les faux X-Forwarded-For (IP non fiable ignorée)',async()=>{
   let last;
   for(let i=0;i<6;i++) last=await post({},{'X-Forwarded-For':`203.0.113.${i+1}`});
   assert.equal(last.status,429);assert.ok(last.headers.get('retry-after'));

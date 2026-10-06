@@ -40,7 +40,7 @@ La vue Semaine affiche les sept jours, y compris les jours sans cours. Sur petit
 - Identifiant et mot de passe : reçus par `POST /api/auth/login`, relayés au CAS, utilisés en mémoire le temps de la requête ; jamais écrits sur disque, dans un cookie ou dans les journaux.
 - Session : cookies CAS/CELCAT chiffrés (JWE A256GCM) dans le cookie `edt_session` du navigateur, 6 h maximum ; le serveur ne garde en mémoire que `jti` + échéance (révocation à la déconnexion, à l’expiration de la session CAS ou au redémarrage).
 - Planning : récupéré à la connexion et à chaque actualisation, analysé en mémoire, renvoyé au navigateur, jamais stocké côté serveur ni dans le stockage local.
-- Journaux applicatifs : uniquement type d’événement, code et date pour les erreurs 5xx. Compteurs anti-abus par IP en mémoire (15 min / 1 min).
+- Journaux applicatifs : uniquement type d’événement, code et date pour les erreurs 5xx. Compteurs anti-abus par IP en mémoire (15 min / 1 min), par empreinte d’identifiant et global (1 h) ; événement `login_failed` avec un simple compteur, sans identifiant ni IP.
 
 Le nombre de jours reçus est affiché près de la synchronisation. Si le résultat réel reste incomplet, ouvrir `/api/edt?debug=1` après connexion : cette route protégée renvoie le XML reçu. Ne pas publier ce fichier : il peut contenir des noms et des données de planning. Le fonctionnement avec le flux privé doit encore être confirmé avec une session URCA réelle ; les tests automatisés utilisent des exemples représentatifs.
 
@@ -101,12 +101,12 @@ Le conteneur utilise le mode production : le test de connexion nécessite un acc
 
 ## Corrections de préparation à la production
 
-- Login limité à **5 requêtes par 15 minutes par IP**, actualisation à 30/minute. Réponse HTTP 429 avec délai de réessai.
+- Login limité à **5 échecs par 15 minutes par IP**, **5 échecs par heure par identifiant normalisé** (toutes IP confondues) et **60 échecs par heure au total** ; les connexions réussies ne sont pas décomptées. Déconnexion limitée à 30/minute, actualisation à 30/minute. Réponse HTTP 429 avec délai de réessai.
 - Sessions : registre serveur en mémoire (identifiant `jti` du JWE). La déconnexion révoque immédiatement le jeton, même copié ; un redémarrage ou un changement de `SESSION_SECRET` invalide toutes les sessions (reconnexion demandée).
 - Fournisseur : redirections suivies manuellement et validées (HTTPS + hôtes autorisés), 307/308 après envoi des identifiants refusés, réponses amont plafonnées (`CELCAT_MAX_BYTES`, 5 Mo par défaut), occurrences plafonnées (`CELCAT_MAX_COURSES`), entités XML personnalisées refusées.
 - Les limiteurs et le registre de sessions sont en mémoire : utiliser **une seule réplique**. Pour plusieurs répliques, prévoir un stockage partagé (Redis) avant d’augmenter ce nombre. Un redémarrage remet les compteurs à zéro.
 - Ajouter `APP_ORIGIN=https://edt.theo-birost.fr` dans Dokploy. Les POST d’une autre origine ou sans en-tête `Origin` sont refusés en production, le cookie reste Secure et les en-têtes de sécurité sont activés.
-- `TRUSTED_PROXIES` doit contenir uniquement les IP/CIDR effectivement utilisés par Traefik. Vide = les en-têtes d’IP transmis ne sont pas utilisés (limitation partagée derrière le proxy). Ne jamais définir une confiance globale. Ne pas exposer directement le port 3000 sur Internet ; router par le domaine Dokploy (le Compose publie le port sur `127.0.0.1` seulement, conteneur en lecture seule, capacités retirées, journaux Docker bornés à 3 × 10 Mo).
+- `TRUSTED_PROXIES` est **requis en production** (démarrage refusé s’il est vide) : IP ou CIDR du réseau Docker de Traefik/Dokploy (par exemple le sous-réseau affiché par `docker network inspect dokploy-network`), sans valeur de production dans le dépôt. Sans lui, tous les clients partageraient l’IP du proxy et donc les mêmes compteurs de connexion. Hors production, vide = en-têtes `X-Forwarded-For` ignorés. Ne jamais définir une confiance globale. Ne pas exposer directement le port 3000 sur Internet ; router par le domaine Dokploy (le Compose publie le port sur `127.0.0.1` seulement, conteneur en lecture seule, capacités retirées, journaux Docker bornés à 3 × 10 Mo).
 - `/api/edt?debug=1` est disponible uniquement en développement, après connexion. En production, ce paramètre renvoie le JSON normal.
 - Erreurs client génériques, diagnostic serveur minimal sans données de session, expiration des appels CELCAT après 30 secondes, arrêt propre avec limite de dix secondes.
 - Polices incluses dans le build, sans Google Fonts externe. Le formulaire passe en premier sur mobile.

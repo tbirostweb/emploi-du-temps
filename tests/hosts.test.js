@@ -20,7 +20,7 @@ test('Domaine parent : trop larges refusés',()=>{
   assert.equal(parentDomain('univ-reims.fr'),'univ-reims.fr');
   for(const h of ['fr','com','localhost','a.co.uk','x.gouv.fr','127.0.0.1','[::1]']) assert.equal(parentDomain(h),null,h);
 });
-const run=(url,env={})=>spawnSync(process.execPath,['server/index.js','--production'],{encoding:'utf8',timeout:4000,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'production',SESSION_SECRET:'x'.repeat(40),APP_ORIGIN:'https://edt.example.test',CELCAT_XML_URL:url,...env}});
+const run=(url,env={})=>spawnSync(process.execPath,['server/index.js','--production'],{encoding:'utf8',timeout:4000,env:{PATH:process.env.PATH,PORT:'0',NODE_ENV:'production',SESSION_SECRET:'x'.repeat(40),APP_ORIGIN:'https://edt.example.test',TRUSTED_PROXIES:'127.0.0.1',CELCAT_XML_URL:url,...env}});
 test('Démarrage : exige seulement un CELCAT_XML_URL HTTPS valide, sans variable CAS',()=>{
   const bad=run('http://celcat.example.test/x.xml');assert.notEqual(bad.status,0);assert.match(bad.stderr,/HTTPS/);
   assert.notEqual(run('pas une url').status,0);

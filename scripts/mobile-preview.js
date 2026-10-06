@@ -7,7 +7,7 @@ const events=days.flatMap((day,i)=>i===6?[]:[['08:30','10:30','Mathématiques et
 const upstream=createServer((_req,res)=>{res.setHeader('Content-Type','application/xml');res.end(`<timetable>${events}</timetable>`);});
 await new Promise(resolve=>upstream.listen(0,'127.0.0.1',resolve));
 process.env.NODE_ENV='production';process.env.PORT='0';
-process.env.APP_ORIGIN='https://localhost';process.env.SESSION_SECRET=randomBytes(32).toString('base64');
+process.env.APP_ORIGIN='https://localhost';process.env.TRUSTED_PROXIES??='loopback';process.env.SESSION_SECRET=randomBytes(32).toString('base64');
 process.env.CELCAT_XML_URL=`http://127.0.0.1:${upstream.address().port}`;
 const {createSessionToken}=await import('../server/lib/session.js');
 const token=await createSessionToken(JSON.stringify({cookies:[]}));
