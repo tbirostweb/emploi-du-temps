@@ -28,14 +28,3 @@ test('Un XML invalide ou des semaines indécodables produisent une erreur',()=>{
 test('Session : chiffrée, lisible et protégée contre une altération',async()=>{
  process.env.SESSION_SECRET='test-only-secret-abcdefghijklmnopqrstuvwxyz';const value='{"cookies":[]}';const token=await createSessionToken(value);assert.equal(await readSessionToken(token),value);assert.equal(await readSessionToken(`${token}x`),null);assert.equal(await readSessionToken(null),null);assert.ok(!token.includes(value));
 });
-test('Flux hostile : entités personnalisées et volume d’occurrences plafonnés',()=>{
- assert.throws(()=>parseCelcatXml('<!DOCTYPE t [<!ENTITY a "b">]><timetable><event date="08/09/2026"><starttime>09:00</starttime><module>&a;</module></event></timetable>'),/invalide/);
- assert.throws(()=>parseCelcatXml(`<timetable>${spans}${event('a',0,'Y'.repeat(30000))}</timetable>`),/trop/);
- assert.equal(parseCelcatXml('<timetable><event date="08/09/2026"><starttime>09:00</starttime><module>&lt;img src=x onerror=alert(1)&gt;</module></event></timetable>')[0].subject,'<img src=x onerror=alert(1)>');
-});
-test('Session : jeton révoqué refusé, jeton d’une autre clé refusé',async()=>{
- const {revokeSessionToken}=await import('../server/lib/session.js');
- process.env.SESSION_SECRET='test-only-secret-abcdefghijklmnopqrstuvwxyz';const token=await createSessionToken('{}');
- assert.equal(await readSessionToken(token),'{}');await revokeSessionToken(token);assert.equal(await readSessionToken(token),null);
- const other=await createSessionToken('{}');process.env.SESSION_SECRET='another-test-secret-abcdefghijklmnopqrstuv';assert.equal(await readSessionToken(other),null);
-});

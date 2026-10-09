@@ -37,7 +37,7 @@ Ces réponses serviront à compléter les variables LEGAL_* et à adapter la pol
 - Directeur de publication : Théo Birost.
 - Public : la promotion de l’éditeur (déclaration de destination, pas une nouvelle restriction technique d’accès).
 - Hébergement : VPS OVH en France, confirmé par l’éditeur.
-- Journaux : durée déclarée via LOG_RETENTION_DAYS (affichage seulement, l’application ne purge rien) ; suppression des journaux d’infrastructure à paramétrer et tester côté hébergement.
+- Journaux : 30 jours retenus. Suppression automatique à paramétrer et tester lors du déploiement ; non configurée par la simple variable LOG_RETENTION_DAYS.
 
 Source : Societe.com n’a pas pu être consulté. Informations d’entreprise recoupées sur https://entreprises.lefigaro.fr/monsieur-theo-birost-10/entreprise-108892993 ; inscription précise au registre à confirmer avec l’extrait RNE.
 

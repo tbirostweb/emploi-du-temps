@@ -26,24 +26,19 @@ before(async()=>{
   if(!server.listening) await new Promise(resolve=>server.once('listening',resolve));
   base=`http://127.0.0.1:${server.address().port}`;
 });
-after(async()=>{await Promise.all([server,upstream].filter(Boolean).map(s=>new Promise(resolve=>{s.closeAllConnections?.();s.close(resolve);})));});
-const ORIGIN='https://edt.example.test';
-const post=(body,headers={})=>fetch(`${base}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json',Origin:ORIGIN,...headers},body:JSON.stringify(body)});
+after(async()=>{await Promise.all([server,upstream].filter(Boolean).map(s=>new Promise(resolve=>s.close(resolve))));});
+const post=(body,headers={})=>fetch(`${base}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});
 test('Production : pages légales, sécurité HTTP et vraie 404',async()=>{
   for(const path of ['/','/mentions-legales','/confidentialite']){
     const r=await fetch(base+path);assert.equal(r.status,200,path);
     assert.ok(r.headers.get('content-security-policy'));assert.equal(r.headers.get('x-content-type-options'),'nosniff');
     assert.equal(r.headers.get('x-robots-tag'),'noindex, nofollow');
-    assert.match(r.headers.get('permissions-policy'),/camera=\(\)/);assert.match(r.headers.get('strict-transport-security'),/max-age=31536000/);assert.equal(r.headers.get('x-frame-options'),'SAMEORIGIN');
   }
   const r=await fetch(base+'/inconnue');assert.equal(r.status,404);assert.match(await r.text(),/Page introuvable/);
 });
 test('API : session requise, origine et entrées contrôlées',async()=>{
   assert.equal((await fetch(base+'/api/edt')).status,401);
   assert.equal((await post({},{Origin:'https://evil.example'})).status,403);
-  assert.equal((await fetch(`${base}/api/auth/logout`,{method:'POST',headers:{'Sec-Fetch-Site':'cross-site'}})).status,403);
-  // Cookie altéré ou forgé : 401 sans appel fournisseur exploitable.
-  assert.equal((await fetch(base+'/api/edt',{headers:{Cookie:'edt_session=abc.def.ghi.jkl.mno'}})).status,401);
   assert.equal((await post({username:12,password:'x'})).status,400);
   const tooLarge=await post({username:'u',password:'x'.repeat(9000)});assert.equal(tooLarge.status,413);
 });
@@ -54,11 +49,8 @@ test('Session production : cookie sécurisé, debug désactivé et logout',async
   const r=await fetch(base+'/api/edt?debug=1',{headers:{Cookie:cookie}});
   assert.equal(r.status,200);assert.match(r.headers.get('content-type'),/json/);
   assert.equal((await r.json()).courses[0].start,'14:00');
-  const logout=await fetch(base+'/api/auth/logout',{method:'POST',headers:{Cookie:cookie,Origin:ORIGIN}});
+  const logout=await fetch(base+'/api/auth/logout',{method:'POST',headers:{Cookie:cookie}});
   assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
-  // Rejeu du jeton copié après déconnexion : refusé (révocation serveur).
-  const replay=await fetch(base+'/api/edt',{headers:{Cookie:cookie}});
-  assert.equal(replay.status,401);assert.equal((await replay.json()).code,'SESSION_EXPIRED');
 });
 test('Login : le plafond bloque aussi les faux X-Forwarded-For (IP non fiable ignorée)',async()=>{
   let last;

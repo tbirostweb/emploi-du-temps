@@ -1,17 +1,13 @@
-# Image épinglée par digest (relevé le 2026-10-04) ; mettre à jour volontairement après scan CVE.
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
 COPY public ./public
-# Parseur XML partagé : utilisé par le serveur (copié aussi au runtime via server/) ; conservé ici
-# pour que le build reste valide si l’interface l’importe.
-COPY server/lib/parse-xml.js ./server/lib/parse-xml.js
 RUN npm run build
 
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
