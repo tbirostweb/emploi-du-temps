@@ -5,6 +5,46 @@ const XML_URL = process.env.CELCAT_XML_URL ??
     "https://celcat-auth.univ-reims.fr/997/groupes/t1739184.xml";
 export class CelcatAuthError extends Error {
 }
+const MAX_REDIRECTS = 3;
+/**
+ * Destination amont autorisée : l'origine exacte de CELCAT_XML_URL, ou une
+ * URL HTTPS (port par défaut) dans le domaine parent de son hôte
+ * (celcat-auth.univ-reims.fr -> univ-reims.fr et ses sous-domaines).
+ */
+function assertAllowedUrl(url) {
+    const u = new URL(url);
+    const xml = new URL(XML_URL);
+    if (u.username || u.password) throw new Error("Destination amont non autorisée.");
+    if (u.origin === xml.origin) return u;
+    const labels = xml.hostname.toLowerCase().split(".");
+    const parent = /^[\d.]+$|^\[/.test(xml.hostname) || labels.length < 3 ? null : labels.slice(1).join(".");
+    const h = u.hostname.toLowerCase();
+    if (u.protocol !== "https:" || u.port !== "" || !parent || (h !== parent && !h.endsWith("." + parent))) {
+        throw new Error("Redirection amont non autorisée.");
+    }
+    return u;
+}
+/**
+ * Suit au plus MAX_REDIRECTS redirections en validant chaque saut. Après un
+ * POST (identifiants), 307/308 sont refusés ; 301/302/303 deviennent un GET
+ * sans corps.
+ */
+async function safeFetch(fetchWithCookies, url, init = {}) {
+    let current = assertAllowedUrl(url).href;
+    let options = init;
+    for (let hop = 0; ; hop++) {
+        const response = await fetchWithCookies(current, { ...options, redirect: "manual", signal: AbortSignal.timeout(30000) });
+        if (![301, 302, 303, 307, 308].includes(response.status)) return { response, url: current };
+        await response.body?.cancel();
+        const location = response.headers.get("location");
+        if (!location || hop >= MAX_REDIRECTS) throw new Error("Redirection amont invalide.");
+        if ((response.status === 307 || response.status === 308) && options.method && options.method !== "GET") {
+            throw new Error("Redirection conservant les identifiants refusée.");
+        }
+        current = assertAllowedUrl(new URL(location, current)).href;
+        options = {};
+    }
+}
 /**
  * Se connecte au CAS de l'université avec les identifiants fournis, puis
  * récupère le flux XML de l'emploi du temps.
@@ -18,13 +58,10 @@ export async function loginAndFetchSchedule(username, password) {
     const jar = new CookieJar();
     const fetchWithCookies = fetchCookieBuilder(fetch, jar);
     // 1. On demande le XML : sans session, le CAS nous redirige vers son
-    // formulaire de login. `fetch` suit les redirections automatiquement.
-    const loginPageResponse = await fetchWithCookies(XML_URL, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(30000),
-    });
+    // formulaire de login (redirections suivies et validées une à une).
+    const { response: loginPageResponse, url: loginPageUrl } = await safeFetch(fetchWithCookies, XML_URL);
     const loginPageHtml = await loginPageResponse.text();
-    if (!loginPageResponse.url.includes("/cas/login")) {
+    if (!new URL(loginPageUrl).pathname.includes("/cas/login")) {
         // Cas de figure imprévu : pas de redirection vers le CAS. On considère
         // que le flux est peut-être déjà public, on renvoie tel quel.
         if (!loginPageResponse.ok || !looksLikeCelcatXml(loginPageHtml)) throw new CelcatAuthError("Le service CELCAT ne renvoie pas d’emploi du temps.");
@@ -43,23 +80,21 @@ export async function loginAndFetchSchedule(username, password) {
     if (!hiddenFields.execution) {
         throw new CelcatAuthError("Impossible de trouver le formulaire de connexion CAS (la page a peut-être changé de structure).");
     }
-    // 3. On soumet le formulaire de connexion.
+    // 3. On soumet le formulaire de connexion, uniquement à l'URL CAS validée.
     const form = new URLSearchParams({
         ...hiddenFields,
         username,
         password,
         _eventId: "submit",
     });
-    const authResponse = await fetchWithCookies(loginPageResponse.url, {
+    const { response: authResponse, url: authUrl } = await safeFetch(fetchWithCookies, loginPageUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
-        redirect: "follow",
-        signal: AbortSignal.timeout(30000),
     });
     const authResultHtml = await authResponse.text();
     // 4. Si on est revenu sur une page de login, les identifiants sont faux.
-    if (authResponse.url.includes("/cas/login")) {
+    if (new URL(authUrl).pathname.includes("/cas/login")) {
         throw new CelcatAuthError("Identifiant ou mot de passe incorrect.");
     }
     // 5. On doit maintenant être sur le XML. Par sécurité, si on n'y est pas,
@@ -67,8 +102,7 @@ export async function loginAndFetchSchedule(username, password) {
     // retour supplémentaire avant de livrer le service demandé).
     let xml = authResultHtml;
     if (!looksLikeCelcatXml(xml)) {
-        const finalResponse = await fetchWithCookies(XML_URL, { redirect: "follow", signal: AbortSignal.timeout(30000) });
-        xml = await finalResponse.text();
+        xml = await (await safeFetch(fetchWithCookies, XML_URL)).response.text();
     }
     if (!looksLikeCelcatXml(xml)) {
         throw new CelcatAuthError("La connexion CAS a réussi mais le flux XML attendu n'a pas été trouvé. La structure du site a peut-être changé.");
@@ -83,7 +117,7 @@ export async function loginAndFetchSchedule(username, password) {
 export async function fetchScheduleWithExistingSession(serializedJar) {
     const jar = CookieJar.fromJSON(serializedJar);
     const fetchWithCookies = fetchCookieBuilder(fetch, jar);
-    const response = await fetchWithCookies(XML_URL, { redirect: 'follow', signal: AbortSignal.timeout(30000) });
+    const { response } = await safeFetch(fetchWithCookies, XML_URL);
     if (!response.ok) throw new Error('Service CELCAT indisponible');
     const body = await response.text();
     return looksLikeCelcatXml(body) ? body : null;

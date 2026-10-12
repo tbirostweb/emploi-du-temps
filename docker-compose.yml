@@ -19,4 +19,4 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?Configure SESSION_SECRET}
       CELCAT_XML_URL: ${CELCAT_XML_URL:-https://celcat-auth.univ-reims.fr/997/groupes/t1739184.xml}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
