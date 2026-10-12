@@ -4,9 +4,9 @@ import compression from 'compression';
 import { rateLimit } from 'express-rate-limit';
 import { page, legalPage, privacyPage } from './pages.js';
 import { fileURLToPath } from 'node:url';
-import { checkUpstreamConfig, loginAndFetchSchedule, fetchScheduleWithExistingSession, casLogout, CelcatAuthError, UpstreamPolicyError } from './lib/celcat-auth.js';
+import { loginAndFetchSchedule, fetchScheduleWithExistingSession, CelcatAuthError } from './lib/celcat-auth.js';
 import { createHash } from 'node:crypto';
-import { createSessionToken, readSession, readSessionToken, revokeSessionToken, SESSION_MAX_AGE_SECONDS } from './lib/session.js';
+import { createSessionToken, readSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from './lib/session.js';
 import { parseCelcatXml } from './lib/parse-xml.js';
 
 const production = process.argv.includes('--production') || process.env.NODE_ENV === 'production';
@@ -16,8 +16,7 @@ app.disable('x-powered-by');
 // Compresser les ressources publiques ; ne pas compresser les réponses privées.
 app.use(compression({filter:(req,res)=>!req.path.startsWith('/api/') && compression.filter(req,res)}));
 // Adresses/CIDR explicites du proxy Traefik, jamais `true` ou un nombre de sauts.
-// En production derrière Traefik, sans cette liste tous les clients partagent l’IP du proxy (limiteurs communs) : démarrage refusé.
-if (production && !process.env.TRUSTED_PROXIES?.split(',').some(v=>v.trim())) throw new Error('TRUSTED_PROXIES est requis en production : IP ou CIDR du réseau Traefik/Dokploy (ex. 10.0.1.0/24), jamais une confiance globale.');
+// Vide = en-têtes proxy ignorés (voir .env.example).
 if (process.env.TRUSTED_PROXIES) app.set('trust proxy', process.env.TRUSTED_PROXIES.split(',').map(v=>v.trim()).filter(Boolean));
 app.use(helmet({
   contentSecurityPolicy: production ? { directives: {
@@ -50,9 +49,6 @@ const scheduleLimiter=rateLimit({windowMs:60*1000,limit:30,standardHeaders:'draf
 if(production && !process.env.APP_ORIGIN) throw new Error('APP_ORIGIN est requis en production (https://ton-domaine).');
 const origin=process.env.APP_ORIGIN ? new URL(process.env.APP_ORIGIN).origin : null;
 if(production && !origin.startsWith('https://')) throw new Error('APP_ORIGIN doit utiliser HTTPS.');
-// Hôte(s) CAS exact(s) vers lesquels les identifiants peuvent être soumis (aucune valeur par défaut devinée).
-// Démarrage : CELCAT_XML_URL doit être une URL HTTPS valide ; les hôtes autorisés en sont dérivés.
-if(production) checkUpstreamConfig();
 app.use('/api', (req,res,next) => {
   res.set('Cache-Control','no-store');
   res.set('X-Content-Type-Options','nosniff');
@@ -61,8 +57,9 @@ app.use('/api', (req,res,next) => {
   next();
 });
 app.use(express.json({limit:'8kb'}));
-const readCookie = req => req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith('edt_session='))?.slice(12);
-const cookie = (res, value, maxAge = SESSION_MAX_AGE_SECONDS*1000) => res.cookie('edt_session',value,{httpOnly:true,secure:production,sameSite:'strict',path:'/',maxAge});
+const readCookie = req => req.headers.cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(`${SESSION_COOKIE_NAME}=`))?.slice(SESSION_COOKIE_NAME.length+1);
+// sessionCookieOptions.maxAge est en secondes ; Express attend des millisecondes. Secure seulement en production (développement local en HTTP).
+const cookie = (res, value, maxAge = sessionCookieOptions.maxAge*1000) => res.cookie(SESSION_COOKIE_NAME,value,{httpOnly:true,secure:production,sameSite:'strict',path:'/',maxAge});
 const schedule = xml => {
   const courses = parseCelcatXml(xml);
   return {courses,fetchedAt:new Date().toISOString(),dayCount:new Set(courses.map(c=>c.date)).size};
@@ -73,28 +70,23 @@ app.post('/api/auth/login', loginLimiter, usernameLoginLimiter, globalLoginLimit
   const {username,password} = req.body || {};
   if(typeof username!=='string'||typeof password!=='string'||!username.trim()||!password||username.length>200||password.length>1000) return res.status(400).json({error:'Renseigne ton identifiant et ton mot de passe.'});
   try {
-    const {xml,serializedJar,logoutUrl} = await loginAndFetchSchedule(username.trim(),password);
+    const {xml,serializedJar} = await loginAndFetchSchedule(username.trim(),password);
     const data=schedule(xml);
-    const token=await createSessionToken(serializedJar,{username:username.trim(),logoutUrl});
+    const token=await createSessionToken(serializedJar);
     cookie(res,token);res.json(data);
   } catch(error){
     if(error instanceof CelcatAuthError) process.stderr.write(JSON.stringify({event:'login_failed',count:++loginFailures,at:new Date().toISOString()})+'\n');
     next(error);
   }
 });
-app.post('/api/auth/logout',logoutLimiter,async(req,res,next)=>{try{
-  const token=readCookie(req);
-  // Déconnexion CAS best effort avant la révocation (session active uniquement, erreurs ignorées).
-  const session=await readSession(token);
-  if(session) await casLogout(session.jar,session.logoutUrl);
-  await revokeSessionToken(token);cookie(res,'',0);res.json({ok:true});
-}catch(error){next(error);}});
+// Déconnexion : suppression du cookie dans le navigateur (aucun registre serveur des sessions).
+app.post('/api/auth/logout',logoutLimiter,(_req,res)=>{cookie(res,'',0);res.json({ok:true});});
 app.get('/api/edt',scheduleLimiter,async(req,res,next)=>{
   try {
     const token=readCookie(req);
     const jar=await readSessionToken(token);
     const xml=jar?await fetchScheduleWithExistingSession(jar):null;
-    if(!xml){await revokeSessionToken(token);cookie(res,'',0);return res.status(401).json({error:'Ta session a expiré. Reconnecte-toi pour retrouver tes cours.',code:'SESSION_EXPIRED'});}
+    if(!xml){cookie(res,'',0);return res.status(401).json({error:'Ta session a expiré. Reconnecte-toi pour retrouver tes cours.',code:'SESSION_EXPIRED'});}
     if(!production && req.query.debug==='1') return res.type('application/xml').send(xml);
     res.json(schedule(xml));
   }catch(error){next(error);}
@@ -116,10 +108,7 @@ if(production){
 app.use((error,_req,res,_next)=>{
   const status=error instanceof CelcatAuthError?401:error.type==='entity.parse.failed'?400:error.type==='entity.too.large'?413:502;
   // Diagnostic minimal : aucun message d’exception ni contenu de requête.
-  if(status>=500){
-    const host=error instanceof UpstreamPolicyError?error.host:undefined;
-    process.stderr.write(JSON.stringify({event:error instanceof UpstreamPolicyError?'upstream_refused':'request_failed',status,...(host?{message:`hôte de redirection non autorisé : ${host} — hors du domaine de CELCAT_XML_URL`}:{}),at:new Date().toISOString()})+'\n');
-  }
+  if(status>=500) process.stderr.write(JSON.stringify({event:'request_failed',status,at:new Date().toISOString()})+'\n');
   res.status(status).json({error:status===401?'Connexion impossible. Vérifie tes identifiants ou réessaie plus tard.':status===400?'Requête invalide.':status===413?'Requête trop volumineuse.':'Service temporairement indisponible. Réessaie dans un instant.'});
 });
 const server=app.listen(Number(process.env.PORT||3000),production?'0.0.0.0':'127.0.0.1',()=>{if(!production) process.stdout.write(`Emploi du temps : http://localhost:${process.env.PORT||3000}\n`);});

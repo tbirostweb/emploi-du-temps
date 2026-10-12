@@ -3,7 +3,6 @@ import test, {before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {randomBytes} from 'node:crypto';
-import {spawnSync} from 'node:child_process';
 const FORM='<html><body><form id="fm1" method="post"><input type="hidden" name="execution" value="e1"></form></body></html>';
 const ORIGIN='https://edt.example.test';
 let server, upstream, base;
@@ -34,9 +33,4 @@ test('F4 : 6e essai sur un même identifiant depuis des IP différentes : 429',a
   // Identifiant normalisé (casse, espaces) : même compteur.
   const r=await login('  victime ','198.51.100.20');
   assert.equal(r.status,429);assert.ok(r.headers.get('retry-after'));
-});
-test('F3 : démarrage refusé en production sans TRUSTED_PROXIES',()=>{
-  const env={...process.env,TRUSTED_PROXIES:'',PORT:'0'};
-  const r=spawnSync(process.execPath,[new URL('../server/index.js',import.meta.url).pathname],{env,encoding:'utf8',timeout:20000});
-  assert.notEqual(r.status,0);assert.match(r.stderr,/TRUSTED_PROXIES est requis en production/);
 });
