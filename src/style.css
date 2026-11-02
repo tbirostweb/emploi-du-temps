@@ -79,7 +79,16 @@ button{display:inline-flex;align-items:center;justify-content:center;gap:8px;ver
 
 /* Noël : affiche rétro rouge sur papier crème, houx vert et étoiles dorées. */
 .app.theme-noel{--bg:#f3e8d4;--surface:#fbf5ea;--text:#4d1a12;--muted:#85493a;--line:#e3caab;--soft:#f3dfc6;--accent:#c8261c;--paper:#fbf3e4;--ink:#c8261c;--pine:#2c6a46}
-.app.theme-noel.dark{--bg:#10201a;--surface:#172b22;--text:#f7ecd9;--muted:#cdb89c;--line:#34503f;--soft:#20382b;--accent:#ff7a5c}
+.app.theme-noel.dark{--bg:#1a1210;--surface:#231816;--text:#f6ead8;--muted:#c8ad9c;--line:#43302a;--soft:#2f201c;--accent:#ff6b4a;--gold:#f2c45f}
+/* Sombre : la même affiche sur papier nuit, cartes détourées en couleur. */
+.theme-noel.dark .forest-banner{background:#2a1714;color:var(--text);border-color:var(--ink);box-shadow:inset 0 0 0 6px #2a1714,inset 0 0 0 7.5px var(--ink)}
+.theme-noel.dark .banner-copy .eyebrow{color:var(--gold)}.theme-noel.dark .banner-copy em{color:var(--gold)}
+.theme-noel.dark .page-heading h1 em{color:var(--text)}
+.theme-noel.dark .course{background:#2a1a17;color:var(--text);border-color:var(--accent)}
+.theme-noel.dark .course.blue{background:#1c241b;color:#e3eedb;border-color:#6fae84}
+.theme-noel.dark .course.rose{background:#2b2214;color:#f8e9cf;border-color:var(--gold);border-top-color:var(--gold)}
+.theme-noel.dark .legend{background:#2a1a17;border-color:var(--accent)}.theme-noel.dark .legend.blue{background:#1c241b;border-color:#6fae84}.theme-noel.dark .legend.rose{background:#2b2214;border-color:var(--gold)}
+.theme-noel.dark .login-intro{background:#2a1714}.theme-noel.dark .login-intro:after{background:linear-gradient(0deg,#1a1210f0,transparent 90%)}
 .theme-noel h1,.theme-noel h2,.theme-noel .brand,.theme-noel .banner-copy p,.theme-noel .summary strong,.theme-noel .day-heading strong,.theme-noel .empty-week h3{font-family:'Shrikhand',Georgia,serif;letter-spacing:0}
 .theme-noel h1 em,.theme-noel h2 em,.theme-noel .banner-copy em{font-style:normal}
 .theme-noel .brand{font-size:19px;color:var(--accent)}.theme-noel .brand-icon{border-color:var(--accent)}
