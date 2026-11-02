@@ -48,3 +48,4 @@ coverage/
 **/outputs/
 **/logs/
 **/backups/
+data/

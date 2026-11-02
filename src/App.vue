@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { Leaf, Sun, Moon, LogOut, ArrowRight, RefreshCw, CalendarDays, CalendarCheck, Clock3, ChevronLeft, ChevronRight, Cloud, Plus, Minus } from '@lucide/vue';
+import { Leaf, Sun, Moon, LogOut, ArrowRight, RefreshCw, CalendarDays, CalendarCheck, Clock3, ChevronLeft, ChevronRight, Cloud, Plus, Minus, Palette, Check, TreePine } from '@lucide/vue';
 import forestBanner from './assets/forest-banner.webp';
 import cherryBlossoms from './assets/cherry-blossoms.svg';
 import forestMobile from './assets/forest-mobile.webp';
+import holly from './assets/noel-holly.svg';
 import CourseCard from './components/CourseCard.vue';
 import { isoDate,weekDays,shiftDate,minutes,label,teachingHours } from './calendar.js';
 const isDev=import.meta.env.DEV;
@@ -17,6 +18,11 @@ function resize(event){compact.value=event.matches;}
 viewport.addEventListener('change',resize);
 onUnmounted(()=>viewport.removeEventListener('change',resize));
 try {dark.value=localStorage.getItem('edt-theme-v2')!=='light';}catch{}
+// Thème du site (commun à tous) ; le panneau n’apparaît que pour les IP admin côté serveur.
+const themes=[{id:'foret',label:'Forêt'},{id:'noel',label:'Noël'}];
+const theme=ref('foret'), themeAdmin=ref(false), themePanel=ref(false);
+try {const cached=localStorage.getItem('edt-site-theme');if(themes.some(t=>t.id===cached))theme.value=cached;}catch{}
+const decoration=computed(()=>theme.value==='noel'?holly:cherryBlossoms);
 const days=computed(()=>weekDays(reference.value));
 const weekCourses=computed(()=>courses.value.filter(c=>days.value.includes(c.date)));
 const countDays=computed(()=>new Set(courses.value.map(c=>c.date)).size);
@@ -35,6 +41,12 @@ function dayCourses(day){return groupedCourses.value.get(day)?.all||[];}
 function navigate(n){reference.value=shiftDate(reference.value,n*7);selected.value=shiftDate(selected.value,n*7);}
 function goToday(){reference.value=today;selected.value=today;}
 function jump(event){if(event.target.value){reference.value=event.target.value;selected.value=event.target.value;}}
+async function loadTheme(){try{const r=await fetch('/api/theme');if(!r.ok)return;const d=await r.json();if(themes.some(t=>t.id===d.theme)){theme.value=d.theme;try{localStorage.setItem('edt-site-theme',d.theme);}catch{}}themeAdmin.value=d.admin===true;}catch{}}
+async function chooseTheme(id){
+  const previous=theme.value;theme.value=id;themePanel.value=false;
+  try{const r=await fetch('/api/theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({theme:id})});if(!r.ok)throw new Error();try{localStorage.setItem('edt-site-theme',id);}catch{}}
+  catch{theme.value=previous;error.value='Le thème n’a pas pu être enregistré.';}
+}
 function toggleTheme(){dark.value=!dark.value;try{localStorage.setItem('edt-theme-v2',dark.value?'dark':'light');}catch{}}
 async function load(login=false, initial=false){
   if(loading.value && !initial)return;
@@ -47,23 +59,23 @@ async function load(login=false, initial=false){
   }catch(e){error.value=e instanceof TypeError?'Connexion au serveur impossible. Vérifie ta connexion et réessaie.':e.message;}finally{loading.value=false;}
 }
 async function logout(){loading.value=true;try{const r=await fetch('/api/auth/logout',{method:'POST'});if(!r.ok)throw new Error();authenticated.value=false;courses.value=[];password.value='';error.value='';}catch{error.value='La déconnexion a échoué. Réessaie.';}finally{loading.value=false;}}
-onMounted(()=>load(false,true));
+onMounted(()=>{load(false,true);loadTheme();});
 </script>
 
 <template>
-  <div class="app" :class="{dark}">
+  <div class="app" :class="[{dark},`theme-${theme}`]" @keydown.esc="themePanel=false">
     <header class="topbar">
-      <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"><Leaf /></span><span>Mon emploi du temps<small>INSPÉ · Université de Reims</small></span></a>
-      <div class="header-actions"><span class="semester">Année universitaire {{Number(today.slice(5,7))>=8?Number(today.slice(0,4)):Number(today.slice(0,4))-1}}–{{Number(today.slice(5,7))>=8?Number(today.slice(0,4))+1:Number(today.slice(0,4))}}</span><button class="icon-button" @click="toggleTheme" :aria-label="dark?'Activer le thème clair':'Activer le thème sombre'"><Sun v-if="dark" aria-hidden="true" /><Moon v-else aria-hidden="true" /></button><button v-if="authenticated" class="text-button logout-button" aria-label="Se déconnecter" title="Se déconnecter" :disabled="loading" @click="logout"><LogOut aria-hidden="true" /><span>Se déconnecter</span></button></div>
+      <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"><TreePine v-if="theme==='noel'" /><Leaf v-else /></span><span>Mon emploi du temps<small>INSPÉ · Université de Reims</small></span></a>
+      <div class="header-actions"><span class="semester">Année universitaire {{Number(today.slice(5,7))>=8?Number(today.slice(0,4)):Number(today.slice(0,4))-1}}–{{Number(today.slice(5,7))>=8?Number(today.slice(0,4))+1:Number(today.slice(0,4))}}</span><button class="icon-button" @click="toggleTheme" :aria-label="dark?'Activer le thème clair':'Activer le thème sombre'"><Sun v-if="dark" aria-hidden="true" /><Moon v-else aria-hidden="true" /></button><div v-if="themeAdmin" class="theme-picker"><button class="icon-button" :aria-expanded="themePanel" aria-controls="theme-panel" aria-label="Choisir le thème du site" title="Thème du site" @click="themePanel=!themePanel"><Palette aria-hidden="true" /></button><div v-if="themePanel" id="theme-panel" class="theme-panel"><p>Thème du site <small>visible par tout le monde</small></p><button v-for="t in themes" :key="t.id" :class="['theme-option',`swatch-${t.id}`]" :aria-pressed="theme===t.id" @click="chooseTheme(t.id)"><span class="swatch" aria-hidden="true"></span>{{t.label}}<Check v-if="theme===t.id" aria-hidden="true" /></button></div></div><button v-if="authenticated" class="text-button logout-button" aria-label="Se déconnecter" title="Se déconnecter" :disabled="loading" @click="logout"><LogOut aria-hidden="true" /><span>Se déconnecter</span></button></div>
     </header>
 
     <main v-if="!authenticated" class="login-layout">
       <div v-if="!compact" class="login-intro"><div class="login-landscape" aria-hidden="true"></div><div class="login-intro-copy"><div class="eyebrow">INSPÉ · CHAUMONT</div><h1>Une place pour<br><em>ta semaine.</em></h1><p>Les cours, les salles, les horaires.<br>Ton quotidien étudiant, simplement.</p><span class="intro-caption">Mon emploi du temps · Université de Reims</span></div></div>
-      <section class="login-card"><img class="cherry-decoration cherry-login" :src="cherryBlossoms" width="360" height="240" alt="" aria-hidden="true" draggable="false"><span class="eyebrow">TON ESPACE ÉTUDIANT</span><h2>Bienvenue <em>à toi.</em></h2><p>Connecte-toi avec tes identifiants URCA pour consulter ton emploi du temps.</p><form @submit.prevent="load(true)"><label for="username">Identifiant URCA</label><input id="username" v-model="username" autocapitalize="none" :spellcheck="false" enterkeyhint="next" autocomplete="username" required placeholder="Ton identifiant universitaire" :disabled="loading"><label for="password">Mot de passe</label><input id="password" v-model="password" type="password" enterkeyhint="go" autocomplete="current-password" required placeholder="Ton mot de passe" :disabled="loading"><p v-if="error" role="alert" class="error">{{error}}</p><button class="primary" :disabled="loading">{{loading?'Connexion en cours…':'Ouvrir mon emploi du temps'}} <ArrowRight aria-hidden="true" /></button></form><p class="privacy">Ton mot de passe sert uniquement à te connecter.<br>Il n’est pas enregistré par cette application.</p></section>
+      <section class="login-card"><img class="cherry-decoration cherry-login" :src="decoration" width="360" height="240" alt="" aria-hidden="true" draggable="false"><span class="eyebrow">TON ESPACE ÉTUDIANT</span><h2>Bienvenue <em>à toi.</em></h2><p>Connecte-toi avec tes identifiants URCA pour consulter ton emploi du temps.</p><form @submit.prevent="load(true)"><label for="username">Identifiant URCA</label><input id="username" v-model="username" autocapitalize="none" :spellcheck="false" enterkeyhint="next" autocomplete="username" required placeholder="Ton identifiant universitaire" :disabled="loading"><label for="password">Mot de passe</label><input id="password" v-model="password" type="password" enterkeyhint="go" autocomplete="current-password" required placeholder="Ton mot de passe" :disabled="loading"><p v-if="error" role="alert" class="error">{{error}}</p><button class="primary" :disabled="loading">{{loading?'Connexion en cours…':'Ouvrir mon emploi du temps'}} <ArrowRight aria-hidden="true" /></button></form><p class="privacy">Ton mot de passe sert uniquement à te connecter.<br>Il n’est pas enregistré par cette application.</p></section>
     </main>
 
     <main v-else class="workspace">
-      <div class="forest-banner"><img class="cherry-decoration cherry-banner" :src="cherryBlossoms" width="360" height="240" alt="" aria-hidden="true" draggable="false"><picture class="forest-picture"><source media="(max-width: 700px)" :srcset="forestMobile"><img :src="forestBanner" width="1440" height="420" alt="" decoding="async" fetchpriority="high"></picture><div class="banner-copy"><span class="eyebrow">TON ESPACE ÉTUDIANT</span><p>Chaque chose<br><em>en son temps.</em></p></div><span class="banner-stamp">INSPÉ<br>CHAUMONT</span></div>
+      <div class="forest-banner"><img class="cherry-decoration cherry-banner" :src="decoration" width="360" height="240" alt="" aria-hidden="true" draggable="false"><picture class="forest-picture"><source media="(max-width: 700px)" :srcset="forestMobile"><img :src="forestBanner" width="1440" height="420" alt="" decoding="async" fetchpriority="high"></picture><div class="banner-copy"><span class="eyebrow">{{theme==='noel'?'SAISON D’HIVER':'TON ESPACE ÉTUDIANT'}}</span><p v-if="theme==='noel'">Un petit air<br><em>d’hiver.</em></p><p v-else>Chaque chose<br><em>en son temps.</em></p></div><span class="banner-stamp">INSPÉ<br>CHAUMONT</span></div>
       <div class="page-heading"><div><div class="eyebrow">INSPÉ · CHAUMONT</div><h1>Ma <em>{{mode==='day'?'journée.':'semaine.'}}</em></h1><p class="muted">Ton emploi du temps, en un regard.</p></div><button class="refresh" aria-label="Actualiser l’emploi du temps" :disabled="loading" @click="load()"><RefreshCw aria-hidden="true" :class="{spinning:loading}" /> {{loading?'Actualisation…':'Actualiser'}}</button></div>
       <div v-if="error" class="error" role="alert">{{error}}</div>
       <section class="summary" aria-label="Résumé de la semaine"><div><span class="stat-icon" aria-hidden="true"><CalendarDays /></span><span><strong>{{weekCourses.length}}</strong><small>cours cette semaine</small></span></div><div><span class="stat-icon" aria-hidden="true"><Clock3 /></span><span><strong>{{hours.toLocaleString('fr-FR')}} h</strong><small>de cours · hors jours fériés</small></span></div><div class="sync"><span class="sync-dot"></span><span>Synchronisé avec CELCAT<small>Mis à jour à {{fetchedAt?new Date(fetchedAt).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}}</small></span></div></section>

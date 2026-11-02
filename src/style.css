@@ -67,3 +67,51 @@ button{display:inline-flex;align-items:center;justify-content:center;gap:8px;ver
  .site-footer{padding-inline:40px}.site-footer::before,.site-footer::after{width:90px;height:70px;bottom:-23px;opacity:.65}.site-footer::before{left:-27px}.site-footer::after{right:-27px}
  .footnote{padding:12px 40px}.footnote::before,.footnote::after{width:36px;height:34px}.footnote::before{left:0}.footnote::after{right:0}
 }
+
+/* Panneau de thème (visible seulement pour les IP admin). */
+.theme-picker{position:relative}
+.theme-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:20;width:230px;display:grid;gap:6px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 40px #0000002e}
+.theme-panel p{margin:0 0 4px;font-size:13px;font-weight:600}.theme-panel small{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+.theme-option{justify-content:flex-start;gap:10px;width:100%;min-height:44px}.theme-option[aria-pressed=true]{border-color:var(--accent)}
+.theme-option .lucide{width:16px;height:16px;margin-left:auto}
+.swatch{width:22px;height:22px;flex:none;border-radius:50%;border:1px solid #00000022}
+.swatch-foret .swatch{background:linear-gradient(135deg,#466848 50%,#f4f1e8 50%)}.swatch-noel .swatch{background:linear-gradient(135deg,#c8261c 50%,#2c6a46 50%)}
+
+/* Noël : affiche rétro rouge sur papier crème, houx vert et étoiles dorées. */
+.app.theme-noel{--bg:#f3e8d4;--surface:#fbf5ea;--text:#4d1a12;--muted:#85493a;--line:#e3caab;--soft:#f3dfc6;--accent:#c8261c;--paper:#fbf3e4;--ink:#c8261c;--pine:#2c6a46}
+.app.theme-noel.dark{--bg:#10201a;--surface:#172b22;--text:#f7ecd9;--muted:#cdb89c;--line:#34503f;--soft:#20382b;--accent:#ff7a5c}
+.theme-noel h1,.theme-noel h2,.theme-noel .brand,.theme-noel .banner-copy p,.theme-noel .summary strong,.theme-noel .day-heading strong,.theme-noel .empty-week h3{font-family:'Shrikhand',Georgia,serif;letter-spacing:0}
+.theme-noel h1 em,.theme-noel h2 em,.theme-noel .banner-copy em{font-style:normal}
+.theme-noel .brand{font-size:19px;color:var(--accent)}.theme-noel .brand-icon{border-color:var(--accent)}
+.theme-noel .topbar{border-bottom:6px double var(--accent)}.theme-noel .site-footer{border-top:6px double var(--accent)}
+.theme-noel .page-heading h1{font-size:36px;color:var(--accent)}.theme-noel .page-heading h1 em{color:var(--text)}
+/* Bannière façon affiche : cadre double, étoiles et pastille dentelée. */
+.theme-noel .forest-picture{display:none}
+.theme-noel .forest-banner{background:var(--paper);color:var(--ink);border:2px solid var(--ink);box-shadow:inset 0 0 0 6px var(--paper),inset 0 0 0 7.5px var(--ink)}
+.theme-noel .forest-banner:before{background:url('./assets/noel-sparkles.svg') 62% 50%/170px auto no-repeat}
+.theme-noel .banner-copy .eyebrow{color:var(--pine);font-weight:700}.theme-noel .banner-copy em{color:var(--pine)}
+.theme-noel .banner-stamp{display:grid;place-items:center;width:112px;height:112px;padding:0;border:0;border-radius:0;background:url('./assets/noel-badge.svg') center/contain no-repeat;color:var(--paper);font-weight:700;transform:rotate(-8deg)}
+/* Pastilles pleines : rouge affiche + texte crème dans les deux modes (contraste 5:1). */
+.theme-noel .summary>div:first-child,.theme-noel .segmented button.active,.theme-noel .day-tabs button.active,.theme-noel .is-today .day-heading strong{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.theme-noel .summary>div:first-child small{color:#fbe3d6}
+.theme-noel .course{background:var(--paper);color:#4d1a12;border:1.5px solid var(--ink);border-top-width:5px;border-radius:12px}
+.theme-noel .course.blue{background:#e2ecd9;border-color:var(--pine);color:#173a28}
+.theme-noel .course.rose{background:#f8dcd0;border-color:var(--ink);border-top-color:#e3a72f;color:#5a1a10}
+.theme-noel .course-staff,.theme-noel .course summary{color:inherit}
+.theme-noel .course-top>span:first-child{border-color:currentColor}.theme-noel .course-meta{border-top:1px dashed currentColor}
+.theme-noel .legend{border-color:var(--ink);background:var(--paper)}.theme-noel .legend.blue{background:#e2ecd9;border-color:var(--pine)}.theme-noel .legend.rose{background:#f8dcd0}
+/* Connexion : arche vert sapin étoilée, carte papier. */
+.theme-noel .login-intro{background:#1d4630}
+.theme-noel .login-landscape{background:url('./assets/noel-snow.svg') center/200px auto repeat}
+.theme-noel .login-intro:after{background:linear-gradient(0deg,#0f2a1cf0,transparent 90%)}
+.theme-noel .login-intro h1 em{color:#f2c45f}
+.theme-noel .login-card{background:var(--paper);color:#4d1a12;border:2px solid var(--ink)}
+.theme-noel .login-card .eyebrow{color:var(--ink)}.theme-noel .login-card h2 em{color:var(--pine)}.theme-noel .login-card>p,.theme-noel .login-card .privacy{color:#7a3b2e}
+.theme-noel .login-card input{border-color:#e0c3a5;color:#4d1a12}.theme-noel .login-card :focus-visible{outline-color:var(--ink)}
+.theme-noel .primary{background:var(--ink);border-color:var(--ink)}.theme-noel .primary:hover:not(:disabled){background:#a81e15}
+/* Décors : étoiles et houx à la place des sakuras. */
+.theme-noel .workspace::before,.theme-noel .workspace::after{background-image:url('./assets/noel-snow.svg')}
+.theme-noel .summary>div::after,.theme-noel .day-heading::before,.theme-noel .footnote::before,.theme-noel .footnote::after,.theme-noel .free-period::before{background-image:url('./assets/noel-sparkles.svg')}
+.theme-noel .free-period::before{background-size:60px auto}
+.theme-noel .site-footer::before,.theme-noel .site-footer::after,.theme-noel .login-intro::before{background-image:url('./assets/noel-holly.svg')}
+@media(max-width:700px){.theme-noel .cherry-banner{display:none}.theme-noel .brand{font-size:16px}.theme-noel .page-heading h1{font-size:28px}.theme-noel .banner-stamp{width:76px;height:76px;font-size:9px}.theme-noel .forest-banner:before{background-size:110px auto;background-position:70% 50%}}

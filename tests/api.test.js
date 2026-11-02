@@ -2,6 +2,7 @@ import test, {before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {randomBytes} from 'node:crypto';
+import {tmpdir} from 'node:os';
 let server, upstream, base;
 before(async()=>{
   // CAS minimal en boucle locale : le flux exige un passage par /cas/login.
@@ -22,6 +23,9 @@ before(async()=>{
   process.env.CELCAT_XML_URL=`http://127.0.0.1:${upstream.address().port}/xml`;
   // Proxy de confiance volontairement différent du client de test (127.0.0.1) : ses X-Forwarded-For sont ignorés.
   process.env.TRUSTED_PROXIES='192.0.2.1';
+  // Admin du thème ≠ client de test : le panneau doit rester caché et le POST refusé.
+  process.env.THEME_ADMIN_IPS='203.0.113.50,2001:db8::/64';
+  process.env.THEME_FILE=`${tmpdir()}/edt-theme-${process.pid}.json`;
   server=(await import('../server/index.js')).default;
   if(!server.listening) await new Promise(resolve=>server.once('listening',resolve));
   base=`http://127.0.0.1:${server.address().port}`;
@@ -67,4 +71,12 @@ test('Assets publics : cache durable et compression, API privée non compressée
   const html=await fetch(base+'/');assert.equal(html.headers.get('cache-control'),'no-cache');
   const api=await fetch(base+'/api/edt',{headers:{'Accept-Encoding':'gzip'}});
   assert.equal(api.headers.get('cache-control'),'no-store');assert.equal(api.headers.get('content-encoding'),null);
+});
+test('Thème : lisible par tous, modifiable seulement depuis une IP admin',async()=>{
+  const r=await fetch(base+'/api/theme');assert.equal(r.status,200);
+  assert.deepEqual(await r.json(),{theme:'foret',admin:false});
+  const change=headers=>fetch(base+'/api/theme',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({theme:'noel'})});
+  assert.equal((await change()).status,403);
+  assert.equal((await change({'X-Forwarded-For':'203.0.113.50'})).status,403);
+  assert.equal((await (await fetch(base+'/api/theme')).json()).theme,'foret');
 });

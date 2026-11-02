@@ -6,6 +6,10 @@ import { page, legalPage, privacyPage } from './pages.js';
 import { fileURLToPath } from 'node:url';
 import { loginAndFetchSchedule, fetchScheduleWithExistingSession, CelcatAuthError } from './lib/celcat-auth.js';
 import { createHash } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
+import { readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { createSessionToken, readSessionToken, SESSION_COOKIE_NAME, sessionCookieOptions } from './lib/session.js';
 import { parseCelcatXml } from './lib/parse-xml.js';
 
@@ -65,6 +69,30 @@ const schedule = xml => {
   return {courses,fetchedAt:new Date().toISOString(),dayCount:new Set(courses.map(c=>c.date)).size};
 };
 app.get('/api/health', (_req,res)=>res.json({ok:true}));
+// Thème du site, choisi pour tout le monde depuis les IP de THEME_ADMIN_IPS (adresses ou CIDR).
+const THEMES=['foret','noel'];
+const themeFile=process.env.THEME_FILE||fileURLToPath(new URL('../data/theme.json',import.meta.url));
+let siteTheme='foret';
+try{const saved=JSON.parse(readFileSync(themeFile,'utf8')).theme;if(THEMES.includes(saved))siteTheme=saved;}catch{}
+const themeAdmins=new BlockList();
+for(const entry of (process.env.THEME_ADMIN_IPS||'').split(',').map(v=>v.trim()).filter(Boolean)){
+  const [address,prefix]=entry.split('/');const family=isIP(address)===6?'ipv6':'ipv4';
+  if(!isIP(address)) throw new Error(`THEME_ADMIN_IPS : adresse invalide « ${entry} ».`);
+  prefix?themeAdmins.addSubnet(address,Number(prefix),family):themeAdmins.addAddress(address,family);
+}
+const isThemeAdmin=req=>{const ip=(req.ip||'').replace(/^::ffff:(?=\d+\.)/,'');return isIP(ip)>0&&themeAdmins.check(ip,isIP(ip)===6?'ipv6':'ipv4');};
+const themeLimiter=rateLimit({windowMs:60*1000,limit:20,standardHeaders:'draft-8',legacyHeaders:false,
+  message:{error:'Trop de requêtes. Réessaie dans une minute.'}});
+app.get('/api/theme',(req,res)=>res.json({theme:siteTheme,admin:isThemeAdmin(req)}));
+app.post('/api/theme',themeLimiter,async(req,res)=>{
+  if(!isThemeAdmin(req)) return res.status(403).json({error:'Requête non autorisée.'});
+  const theme=req.body?.theme;
+  if(!THEMES.includes(theme)) return res.status(400).json({error:'Thème inconnu.'});
+  siteTheme=theme;
+  // Sans volume persistant, le choix tient jusqu’au prochain redémarrage.
+  try{await mkdir(dirname(themeFile),{recursive:true});await writeFile(themeFile,JSON.stringify({theme}));}catch{process.stderr.write(JSON.stringify({event:'theme_save_failed',at:new Date().toISOString()})+'\n');}
+  res.json({theme});
+});
 // Ordre : un refus 429 d’un limiteur amont ne consomme pas les quotas suivants (dont le global).
 app.post('/api/auth/login', loginLimiter, usernameLoginLimiter, globalLoginLimiter, async (req,res,next)=>{
   const {username,password} = req.body || {};
