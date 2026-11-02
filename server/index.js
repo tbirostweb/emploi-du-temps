@@ -80,10 +80,12 @@ for(const entry of (process.env.THEME_ADMIN_IPS||'').split(',').map(v=>v.trim())
   if(!isIP(address)) throw new Error(`THEME_ADMIN_IPS : adresse invalide « ${entry} ».`);
   prefix?themeAdmins.addSubnet(address,Number(prefix),family):themeAdmins.addAddress(address,family);
 }
-const isThemeAdmin=req=>{const ip=(req.ip||'').replace(/^::ffff:(?=\d+\.)/,'');return isIP(ip)>0&&themeAdmins.check(ip,isIP(ip)===6?'ipv6':'ipv4');};
+const clientIp=req=>(req.ip||'').replace(/^::ffff:(?=\d+\.)/,'');
+const isThemeAdmin=req=>{const ip=clientIp(req);return isIP(ip)>0&&themeAdmins.check(ip,isIP(ip)===6?'ipv6':'ipv4');};
 const themeLimiter=rateLimit({windowMs:60*1000,limit:20,standardHeaders:'draft-8',legacyHeaders:false,
   message:{error:'Trop de requêtes. Réessaie dans une minute.'}});
-app.get('/api/theme',(req,res)=>res.json({theme:siteTheme,admin:isThemeAdmin(req)}));
+// `ip` : l’adresse du visiteur vue par le serveur (la sienne seulement), pour régler THEME_ADMIN_IPS.
+app.get('/api/theme',(req,res)=>res.json({theme:siteTheme,admin:isThemeAdmin(req),ip:clientIp(req)}));
 app.post('/api/theme',themeLimiter,async(req,res)=>{
   if(!isThemeAdmin(req)) return res.status(403).json({error:'Requête non autorisée.'});
   const theme=req.body?.theme;

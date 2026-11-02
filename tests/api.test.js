@@ -74,7 +74,7 @@ test('Assets publics : cache durable et compression, API privée non compressée
 });
 test('Thème : lisible par tous, modifiable seulement depuis une IP admin',async()=>{
   const r=await fetch(base+'/api/theme');assert.equal(r.status,200);
-  assert.deepEqual(await r.json(),{theme:'foret',admin:false});
+  assert.deepEqual(await r.json(),{theme:'foret',admin:false,ip:'127.0.0.1'});
   const change=headers=>fetch(base+'/api/theme',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({theme:'noel'})});
   assert.equal((await change()).status,403);
   assert.equal((await change({'X-Forwarded-For':'203.0.113.50'})).status,403);
