@@ -46,7 +46,7 @@ const globalLoginLimiter=rateLimit({windowMs:60*60*1000,limit:60,standardHeaders
   message:{error:'Trop de tentatives. Réessaie plus tard.'}});
 const logoutLimiter=rateLimit({windowMs:60*1000,limit:30,standardHeaders:'draft-8',legacyHeaders:false,
   message:{error:'Trop de requêtes. Réessaie dans une minute.'}});
-// Compteur des échecs de connexion depuis le démarrage (journal sans identifiant ni IP).
+// Compteur des échecs de connexion depuis le démarrage (journal sans identifiant ni IP ; reason = étape CAS en échec).
 let loginFailures=0;
 const scheduleLimiter=rateLimit({windowMs:60*1000,limit:30,standardHeaders:'draft-8',legacyHeaders:false,
   message:{error:'Trop d’actualisations. Réessaie dans une minute.'}});
@@ -105,7 +105,7 @@ app.post('/api/auth/login', loginLimiter, usernameLoginLimiter, globalLoginLimit
     const token=await createSessionToken(serializedJar);
     cookie(res,token);res.json(data);
   } catch(error){
-    if(error instanceof CelcatAuthError) process.stderr.write(JSON.stringify({event:'login_failed',count:++loginFailures,at:new Date().toISOString()})+'\n');
+    if(error instanceof CelcatAuthError) process.stderr.write(JSON.stringify({event:'login_failed',reason:error.message,count:++loginFailures,at:new Date().toISOString(),...(!production&&error.detail?{detail:error.detail}:{})})+'\n');
     next(error);
   }
 });

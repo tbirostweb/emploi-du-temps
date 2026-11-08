@@ -6,6 +6,8 @@ import {randomBytes} from 'node:crypto';
 const XML='<timetable><event date="2026-09-09"><starttime>14:00</starttime><endtime>16:00</endtime><module>Test</module></event></timetable>';
 const FORM='<html><body><form id="fm1" method="post"><input type="hidden" name="execution" value="e1"></form></body></html>';
 const ORIGIN='https://edt.example.test';
+// Page « Authentication Interrupt » du CAS après un mot de passe accepté (deux formulaires, comme l’URCA).
+const INTERRUPT='<html><body><h2>Authentication Interrupt</h2><form method="post" action="login"><input type="hidden" name="execution" value="e2"><input type="hidden" name="_eventId" value="redirect"><button name="redirect">Lien</button></form><form method="post" action="login"><input type="hidden" name="execution" value="e2"><input type="hidden" name="_eventId" value="proceed"><button name="proceed">Continuer</button></form></body></html>';
 let server, upstream, base, mode='cas', sessionCookie;
 const body=req=>new Promise(resolve=>{let d='';req.on('data',c=>d+=c);req.on('end',()=>resolve(d));});
 before(async()=>{
@@ -21,7 +23,10 @@ before(async()=>{
     }
     if(url.pathname==='/cas/login'){
       if(req.method==='GET') return res.end(FORM);
-      if(new URLSearchParams(data).get('password')==='good') {res.writeHead(302,{'Set-Cookie':'TGC=cas-secret; Path=/cas',Location:'/xml?ticket=ST-fixture'});return res.end();}
+      const params=new URLSearchParams(data);
+      if(mode==='interrupt' && params.get('password')==='good') return res.end(INTERRUPT);
+      if(params.get('_eventId')==='proceed' && params.get('execution')==='e2' && url.search==='') {res.writeHead(302,{'Set-Cookie':'TGC=cas-secret; Path=/cas',Location:'/xml?ticket=ST-fixture'});return res.end();}
+      if(params.get('password')==='good') {res.writeHead(302,{'Set-Cookie':'TGC=cas-secret; Path=/cas',Location:'/xml?ticket=ST-fixture'});return res.end();}
       return res.end(FORM);
     }
     res.statusCode=404;res.end();
@@ -45,6 +50,13 @@ test('CAS synthétique : connexion, mauvais mot de passe, sessions distinctes',a
   assert.equal((await login('fixture','bad')).status,401);
   // Sans cookie, aucune session partagée n’est réutilisée.
   assert.equal((await fetch(base+'/api/edt')).status,401);
+});
+test('CAS : page « Authentication Interrupt » franchie automatiquement',async()=>{
+  mode='interrupt';
+  const ok=await login('fixture','good');assert.equal(ok.status,200);
+  assert.equal((await ok.json()).courses[0].subject,'Test');
+  assert.equal((await login('fixture','bad')).status,401);
+  mode='cas';
 });
 test('XML avec entités personnalisées : refus 502',async()=>{
   assert.ok(sessionCookie);

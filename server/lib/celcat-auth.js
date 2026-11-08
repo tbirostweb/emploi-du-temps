@@ -87,15 +87,43 @@ export async function loginAndFetchSchedule(username, password) {
         password,
         _eventId: "submit",
     });
-    const { response: authResponse, url: authUrl } = await safeFetch(fetchWithCookies, loginPageUrl, {
+    let { response: authResponse, url: authUrl } = await safeFetch(fetchWithCookies, loginPageUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: form.toString(),
     });
-    const authResultHtml = await authResponse.text();
+    let authResultHtml = await authResponse.text();
+    // 3 bis. Mot de passe accepté, le CAS peut afficher une « Authentication
+    // Interrupt » (message à valider) : on clique « Continuer » (_eventId=proceed).
+    for (let i = 0; i < 2 && new URL(authUrl).pathname.includes("/cas/login"); i++) {
+        const $interrupt = cheerio.load(authResultHtml);
+        const proceed = $interrupt("input[name=_eventId][value=proceed]").first();
+        if (!proceed.length) break;
+        const proceedForm = proceed.closest("form");
+        const fields = new URLSearchParams();
+        (proceedForm.length ? proceedForm : $interrupt.root()).find("input[type=hidden][name]").each((_, el) => {
+            if (!proceedForm.length && $interrupt(el).attr("name") !== "execution") return;
+            fields.set($interrupt(el).attr("name"), $interrupt(el).attr("value") ?? "");
+        });
+        fields.set("_eventId", "proceed");
+        ({ response: authResponse, url: authUrl } = await safeFetch(fetchWithCookies, new URL(proceedForm.attr("action") || authUrl, authUrl).href, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: fields.toString(),
+        }));
+        authResultHtml = await authResponse.text();
+    }
     // 4. Si on est revenu sur une page de login, les identifiants sont faux.
     if (new URL(authUrl).pathname.includes("/cas/login")) {
-        throw new CelcatAuthError("Identifiant ou mot de passe incorrect.");
+        const error = new CelcatAuthError("Identifiant ou mot de passe incorrect.");
+        // Diagnostic (journalisé en développement seulement) : structure de la page CAS renvoyée, sans saisie utilisateur.
+        const $page = cheerio.load(authResultHtml);
+        const text = sel => $page(sel).map((_, el) => $page(el).text().replace(/\s+/g, " ").trim()).get().filter(Boolean).slice(0, 5);
+        error.detail = { status: authResponse.status, title: $page("title").text().trim(), headings: text("h1, h2, h3"),
+            errors: text("#loginErrorsPanel, .banner-danger, .alert-danger, .mdc-snackbar, [id*=rror], [class*=rror]"),
+            events: $page("input[name=_eventId]").map((_, el) => $page(el).attr("value")).get(),
+            buttons: $page("button[name], input[type=submit]").map((_, el) => $page(el).attr("name") || $page(el).attr("value")).get() };
+        throw error;
     }
     // 5. On doit maintenant être sur le XML. Par sécurité, si on n'y est pas,
     // on tente un GET explicite (certaines configs CAS demandent un aller-
