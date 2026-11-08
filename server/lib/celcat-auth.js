@@ -46,6 +46,42 @@ async function safeFetch(fetchWithCookies, url, init = {}) {
     }
 }
 /**
+ * Mot de passe accepté (ou SSO via le TGC), le CAS peut afficher une
+ * « Authentication Interrupt » (message à valider) sur /cas/login : on clique
+ * « Continuer » (_eventId=proceed). Une vraie page de connexion est renvoyée telle quelle.
+ */
+async function passInterrupt(fetchWithCookies, page) {
+    for (let i = 0; i < 2 && new URL(page.url).pathname.includes("/cas/login"); i++) {
+        const $interrupt = cheerio.load(page.html);
+        const proceed = $interrupt("input[name=_eventId][value=proceed]").first();
+        if (!proceed.length) break;
+        const proceedForm = proceed.closest("form");
+        const fields = new URLSearchParams();
+        (proceedForm.length ? proceedForm : $interrupt.root()).find("input[type=hidden][name]").each((_, el) => {
+            if (!proceedForm.length && $interrupt(el).attr("name") !== "execution") return;
+            fields.set($interrupt(el).attr("name"), $interrupt(el).attr("value") ?? "");
+        });
+        fields.set("_eventId", "proceed");
+        const { response, url } = await safeFetch(fetchWithCookies, new URL(proceedForm.attr("action") || page.url, page.url).href, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: fields.toString(),
+        });
+        page = { response, url, html: await response.text() };
+    }
+    return page;
+}
+/**
+ * Garde seulement les cookies utiles (session CELCAT + SSO CAS) : le jar chiffré
+ * tient dans un cookie, que les navigateurs refusent au-delà de 4 Ko.
+ */
+function serializeJar(jar) {
+    const data = jar.toJSON();
+    const xmlHost = new URL(XML_URL).hostname;
+    data.cookies = data.cookies.filter(c => c.domain === xmlHost || ["TGC", "ROUTEID"].includes(c.key));
+    return JSON.stringify(data);
+}
+/**
  * Se connecte au CAS de l'université avec les identifiants fournis, puis
  * récupère le flux XML de l'emploi du temps.
  *
@@ -65,7 +101,7 @@ export async function loginAndFetchSchedule(username, password) {
         // Cas de figure imprévu : pas de redirection vers le CAS. On considère
         // que le flux est peut-être déjà public, on renvoie tel quel.
         if (!loginPageResponse.ok || !looksLikeCelcatXml(loginPageHtml)) throw new CelcatAuthError("Le service CELCAT ne renvoie pas d’emploi du temps.");
-        return { xml: loginPageHtml, serializedJar: JSON.stringify(jar.toJSON()) };
+        return { xml: loginPageHtml, serializedJar: serializeJar(jar) };
     }
     // 2. On extrait les champs cachés du formulaire CAS (ex: "execution",
     // un jeton anti-rejeu unique à chaque tentative).
@@ -93,26 +129,8 @@ export async function loginAndFetchSchedule(username, password) {
         body: form.toString(),
     });
     let authResultHtml = await authResponse.text();
-    // 3 bis. Mot de passe accepté, le CAS peut afficher une « Authentication
-    // Interrupt » (message à valider) : on clique « Continuer » (_eventId=proceed).
-    for (let i = 0; i < 2 && new URL(authUrl).pathname.includes("/cas/login"); i++) {
-        const $interrupt = cheerio.load(authResultHtml);
-        const proceed = $interrupt("input[name=_eventId][value=proceed]").first();
-        if (!proceed.length) break;
-        const proceedForm = proceed.closest("form");
-        const fields = new URLSearchParams();
-        (proceedForm.length ? proceedForm : $interrupt.root()).find("input[type=hidden][name]").each((_, el) => {
-            if (!proceedForm.length && $interrupt(el).attr("name") !== "execution") return;
-            fields.set($interrupt(el).attr("name"), $interrupt(el).attr("value") ?? "");
-        });
-        fields.set("_eventId", "proceed");
-        ({ response: authResponse, url: authUrl } = await safeFetch(fetchWithCookies, new URL(proceedForm.attr("action") || authUrl, authUrl).href, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: fields.toString(),
-        }));
-        authResultHtml = await authResponse.text();
-    }
+    // 3 bis. Le CAS peut afficher une « Authentication Interrupt » : on la franchit.
+    ({ response: authResponse, url: authUrl, html: authResultHtml } = await passInterrupt(fetchWithCookies, { response: authResponse, url: authUrl, html: authResultHtml }));
     // 4. Si on est revenu sur une page de login, les identifiants sont faux.
     if (new URL(authUrl).pathname.includes("/cas/login")) {
         const error = new CelcatAuthError("Identifiant ou mot de passe incorrect.");
@@ -135,20 +153,20 @@ export async function loginAndFetchSchedule(username, password) {
     if (!looksLikeCelcatXml(xml)) {
         throw new CelcatAuthError("La connexion CAS a réussi mais le flux XML attendu n'a pas été trouvé. La structure du site a peut-être changé.");
     }
-    return { xml, serializedJar: JSON.stringify(jar.toJSON()) };
+    return { xml, serializedJar: serializeJar(jar) };
 }
 /**
  * Réutilise une session déjà établie (cookie chiffré) pour récupérer le XML
- * sans redemander le mot de passe. Renvoie `null` si la session a expiré
- * (le front doit alors réafficher le formulaire de connexion).
+ * sans redemander le mot de passe. Renvoie le XML et le jar mis à jour, ou
+ * `null` si la session a expiré (le front réaffiche alors la connexion).
  */
 export async function fetchScheduleWithExistingSession(serializedJar) {
     const jar = CookieJar.fromJSON(serializedJar);
     const fetchWithCookies = fetchCookieBuilder(fetch, jar);
-    const { response } = await safeFetch(fetchWithCookies, XML_URL);
-    if (!response.ok) throw new Error('Service CELCAT indisponible');
-    const body = await response.text();
-    return looksLikeCelcatXml(body) ? body : null;
+    const first = await safeFetch(fetchWithCookies, XML_URL);
+    const page = await passInterrupt(fetchWithCookies, { ...first, html: await first.response.text() });
+    if (!page.response.ok) throw new Error('Service CELCAT indisponible');
+    return looksLikeCelcatXml(page.html) ? { xml: page.html, serializedJar: serializeJar(jar) } : null;
 }
 function looksLikeCelcatXml(text) {
     return /<(timetable|agenda|calendar|events)(?:\s|>)/i.test(text) && !/<html(?:\s|>)/i.test(text);

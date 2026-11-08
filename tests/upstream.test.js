@@ -6,6 +6,8 @@ import {randomBytes} from 'node:crypto';
 const XML='<timetable><event date="2026-09-09"><starttime>14:00</starttime><endtime>16:00</endtime><module>Test</module></event></timetable>';
 const FORM='<html><body><form id="fm1" method="post"><input type="hidden" name="execution" value="e1"></form></body></html>';
 const ORIGIN='https://edt.example.test';
+// Gros cookies CAS aléatoires (incompressibles), comme CASINTERRUPT à l’URCA.
+const BIG=randomBytes(600).toString('base64url');
 // Page « Authentication Interrupt » du CAS après un mot de passe accepté (deux formulaires, comme l’URCA).
 const INTERRUPT='<html><body><h2>Authentication Interrupt</h2><form method="post" action="login"><input type="hidden" name="execution" value="e2"><input type="hidden" name="_eventId" value="redirect"><button name="redirect">Lien</button></form><form method="post" action="login"><input type="hidden" name="execution" value="e2"><input type="hidden" name="_eventId" value="proceed"><button name="proceed">Continuer</button></form></body></html>';
 let server, upstream, base, mode='cas', sessionCookie;
@@ -17,16 +19,18 @@ before(async()=>{
       if(mode==='entity') {res.setHeader('Content-Type','application/xml');return res.end('<!DOCTYPE t [<!ENTITY a "aaaaaaaaaa">]><timetable><event date="2026-09-09"><starttime>14:00</starttime><module>&a;</module></event></timetable>');}
       if(mode==='expired') {res.writeHead(302,{Location:'/cas/login?service=xml'});return res.end();}
       // Le ticket de service ouvre la session CELCAT (cookie propre au flux).
-      if(url.searchParams.get('ticket')==='ST-fixture') {res.writeHead(302,{'Set-Cookie':'CELCAT=ok; Path=/',Location:'/xml'});return res.end();}
-      if(req.headers.cookie?.includes('CELCAT=ok')) {res.setHeader('Content-Type','application/xml');return res.end(XML);}
+      if(url.searchParams.get('ticket')==='ST-fixture') {res.writeHead(302,{'Set-Cookie':`CELCAT=${mode==='sso-interrupt'?'fresh':'ok'}; Path=/`,Location:'/xml'});return res.end();}
+      if(req.headers.cookie?.includes(mode==='sso-interrupt'?'CELCAT=fresh':'CELCAT=ok')) {res.setHeader('Content-Type','application/xml');return res.end(XML);}
       res.writeHead(302,{Location:'/cas/login?service=xml'});return res.end();
     }
     if(url.pathname==='/cas/login'){
+      // SSO : TGC valide, le CAS repasse par l’interruption avant de délivrer un ticket.
+      if(req.method==='GET' && mode==='sso-interrupt' && req.headers.cookie?.includes('TGC=cas-secret')) return res.end(INTERRUPT);
       if(req.method==='GET') return res.end(FORM);
       const params=new URLSearchParams(data);
       if(mode==='interrupt' && params.get('password')==='good') return res.end(INTERRUPT);
       if(params.get('_eventId')==='proceed' && params.get('execution')==='e2' && url.search==='') {res.writeHead(302,{'Set-Cookie':'TGC=cas-secret; Path=/cas',Location:'/xml?ticket=ST-fixture'});return res.end();}
-      if(params.get('password')==='good') {res.writeHead(302,{'Set-Cookie':'TGC=cas-secret; Path=/cas',Location:'/xml?ticket=ST-fixture'});return res.end();}
+      if(params.get('password')==='good') {res.writeHead(302,{'Set-Cookie':['TGC=cas-secret; Path=/cas',`CASINTERRUPT=${BIG}; Path=/cas`,`XSRF-TOKEN=${BIG}; Path=/cas`],Location:'/xml?ticket=ST-fixture'});return res.end();}
       return res.end(FORM);
     }
     res.statusCode=404;res.end();
@@ -56,6 +60,22 @@ test('CAS : page « Authentication Interrupt » franchie automatiquement',async(
   const ok=await login('fixture','good');assert.equal(ok.status,200);
   assert.equal((await ok.json()).courses[0].subject,'Test');
   assert.equal((await login('fixture','bad')).status,401);
+  mode='cas';
+});
+test('Session : cookie sous 4 Ko malgré de gros cookies CAS, rechargement conservé',async()=>{
+  mode='cas';
+  const ok=await login('fixture','good');assert.equal(ok.status,200);
+  const cookie=ok.headers.get('set-cookie').split(';')[0];
+  assert.ok(cookie.length<4096,`cookie de ${cookie.length} octets`);
+  const again=await fetch(base+'/api/edt',{headers:{Cookie:cookie}});assert.equal(again.status,200);
+  assert.ok(again.headers.get('set-cookie').startsWith('edt_session='));
+});
+test('Rechargement : session CELCAT expirée, SSO avec interruption franchie',async()=>{
+  mode='cas';
+  const cookie=(await login('fixture','good')).headers.get('set-cookie').split(';')[0];
+  mode='sso-interrupt';
+  const r=await fetch(base+'/api/edt',{headers:{Cookie:cookie}});
+  assert.equal(r.status,200);assert.equal((await r.json()).courses[0].subject,'Test');
   mode='cas';
 });
 test('XML avec entités personnalisées : refus 502',async()=>{

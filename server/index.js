@@ -103,6 +103,7 @@ app.post('/api/auth/login', loginLimiter, usernameLoginLimiter, globalLoginLimit
     const {xml,serializedJar} = await loginAndFetchSchedule(username.trim(),password);
     const data=schedule(xml);
     const token=await createSessionToken(serializedJar);
+    if(token.length>4000) process.stderr.write(JSON.stringify({event:'session_cookie_too_large',bytes:token.length,at:new Date().toISOString()})+'\n');
     cookie(res,token);res.json(data);
   } catch(error){
     if(error instanceof CelcatAuthError) process.stderr.write(JSON.stringify({event:'login_failed',reason:error.message,count:++loginFailures,at:new Date().toISOString(),...(!production&&error.detail?{detail:error.detail}:{})})+'\n');
@@ -115,10 +116,12 @@ app.get('/api/edt',scheduleLimiter,async(req,res,next)=>{
   try {
     const token=readCookie(req);
     const jar=await readSessionToken(token);
-    const xml=jar?await fetchScheduleWithExistingSession(jar):null;
-    if(!xml){cookie(res,'',0);return res.status(401).json({error:'Ta session a expiré. Reconnecte-toi pour retrouver tes cours.',code:'SESSION_EXPIRED'});}
-    if(!production && req.query.debug==='1') return res.type('application/xml').send(xml);
-    res.json(schedule(xml));
+    const result=jar?await fetchScheduleWithExistingSession(jar):null;
+    if(!result){cookie(res,'',0);return res.status(401).json({error:'Ta session a expiré. Reconnecte-toi pour retrouver tes cours.',code:'SESSION_EXPIRED'});}
+    // Jar éventuellement renouvelé (SSO CAS) : le cookie est réécrit, ce qui prolonge la session.
+    cookie(res,await createSessionToken(result.serializedJar));
+    if(!production && req.query.debug==='1') return res.type('application/xml').send(result.xml);
+    res.json(schedule(result.xml));
   }catch(error){next(error);}
 });
 app.use('/api',(_req,res)=>res.status(404).json({error:'Page introuvable.'}));

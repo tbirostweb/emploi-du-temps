@@ -1,5 +1,6 @@
 import { EncryptJWT, jwtDecrypt } from "jose";
 import { createHash } from "crypto";
+import { deflateRawSync, inflateRawSync } from "zlib";
 export const SESSION_COOKIE_NAME = "edt_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 6; // 6h, à ajuster selon la durée réelle de session CAS observée
 function getKey() {
@@ -12,7 +13,8 @@ function getKey() {
 }
 /** Chiffre le jar de cookies CELCAT (jamais le mot de passe) dans un JWE. */
 export async function createSessionToken(serializedJar) {
-    return new EncryptJWT({ jar: serializedJar })
+    // Compressé : le cookie doit rester sous la limite de 4 Ko des navigateurs.
+    return new EncryptJWT({ z: deflateRawSync(serializedJar).toString("base64") })
         .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
         .setIssuedAt()
         .setExpirationTime(`${SESSION_MAX_AGE_SECONDS}s`)
@@ -24,7 +26,7 @@ export async function readSessionToken(token) {
         return null;
     try {
         const { payload } = await jwtDecrypt(token, getKey());
-        return payload.jar ?? null;
+        return typeof payload.z === "string" ? inflateRawSync(Buffer.from(payload.z, "base64")).toString() : payload.jar ?? null;
     }
     catch {
         return null; // expiré, altéré, ou clé changée -> on redemande une connexion
